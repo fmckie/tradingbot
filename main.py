@@ -12,8 +12,11 @@ import os
 import sys
 from datetime import datetime, timedelta, date
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 import pytz
+from alpaca.trading.models import TradeAccount, Position, Order
+from alpaca.trading.requests import GetOrdersRequest
+from alpaca.trading.enums import QueryOrderStatus
 import schedule
 from rich.console import Console
 from rich.live import Live
@@ -73,8 +76,9 @@ class TradingCompetition:
     6. Log everything
     """
 
-    def __init__(self):
+    def __init__(self, skip_market_check: bool = False):
         console.print("[bold yellow]Initializing AI Trading Competition...[/bold yellow]")
+        self.skip_market_check = skip_market_check
 
         # Initialize Alpaca clients for both accounts
         self.claude_trading, self.claude_data = get_claude_client()
@@ -214,61 +218,66 @@ class TradingCompetition:
                 symbols_data[symbol] = {"price": 0, "error": str(e)}
 
         # Get account info
+        account_data: dict[str, Any] = {}
         try:
             account = trading_client.get_account()
-            account_data = {
-                "equity": float(account.equity),
-                "cash": float(account.cash),
-                "buying_power": float(account.buying_power),
-                "portfolio_value": float(account.portfolio_value),
-                "daily_pnl": float(account.equity) - float(account.last_equity),
-                "daily_pnl_percent": (
-                    (float(account.equity) - float(account.last_equity))
-                    / float(account.last_equity)
-                    * 100
-                )
-                if float(account.last_equity) > 0
-                else 0.0,
-            }
+            if isinstance(account, TradeAccount):
+                equity = float(account.equity or 0)
+                cash = float(account.cash or 0)
+                buying_power = float(account.buying_power or 0)
+                portfolio_value = float(account.portfolio_value or 0)
+                last_equity = float(account.last_equity or 0)
+                account_data = {
+                    "equity": equity,
+                    "cash": cash,
+                    "buying_power": buying_power,
+                    "portfolio_value": portfolio_value,
+                    "daily_pnl": equity - last_equity,
+                    "daily_pnl_percent": (
+                        (equity - last_equity) / last_equity * 100
+                    )
+                    if last_equity > 0
+                    else 0.0,
+                }
+            else:
+                account_data = {"equity": STARTING_CAPITAL, "cash": STARTING_CAPITAL, "error": "Invalid account type"}
         except Exception as e:
             console.print(f"[red]Error getting account for {agent_name}: {e}[/red]")
             account_data = {"equity": STARTING_CAPITAL, "cash": STARTING_CAPITAL, "error": str(e)}
 
         # Get positions
+        positions_data: list[dict[str, Any]] = []
         try:
             positions = trading_client.get_all_positions()
-            positions_data = [
-                {
-                    "symbol": p.symbol,
-                    "quantity": int(p.qty),
-                    "avg_entry_price": float(p.avg_entry_price),
-                    "current_price": float(p.current_price),
-                    "market_value": float(p.market_value),
-                    "unrealized_pnl": float(p.unrealized_pl),
-                    "unrealized_pnl_percent": float(p.unrealized_plpc) * 100,
-                }
-                for p in positions
-                if p.symbol in SYMBOLS
-            ]
+            for p in positions:
+                if isinstance(p, Position) and p.symbol in SYMBOLS:
+                    positions_data.append({
+                        "symbol": p.symbol,
+                        "quantity": int(p.qty or 0),
+                        "avg_entry_price": float(p.avg_entry_price or 0),
+                        "current_price": float(p.current_price or 0),
+                        "market_value": float(p.market_value or 0),
+                        "unrealized_pnl": float(p.unrealized_pl or 0),
+                        "unrealized_pnl_percent": float(p.unrealized_plpc or 0) * 100,
+                    })
         except Exception as e:
             console.print(f"[red]Error getting positions for {agent_name}: {e}[/red]")
             positions_data = []
 
         # Get recent orders
+        recent_trades: list[dict[str, Any]] = []
         try:
-            orders = trading_client.get_orders(status="closed", limit=10)
-            recent_trades = [
-                {
-                    "symbol": o.symbol,
-                    "side": o.side.value,
-                    "quantity": int(o.qty),
-                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
-                    "status": o.status.value,
-                    "filled_at": o.filled_at.isoformat() if o.filled_at else None,
-                }
-                for o in orders
-                if o.symbol in SYMBOLS
-            ]
+            orders = trading_client.get_orders(GetOrdersRequest(status=QueryOrderStatus.CLOSED, limit=10))
+            for o in orders:
+                if isinstance(o, Order) and o.symbol in SYMBOLS and o.side is not None:
+                    recent_trades.append({
+                        "symbol": o.symbol,
+                        "side": o.side.value,
+                        "quantity": int(o.qty or 0),
+                        "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
+                        "status": o.status.value if o.status else None,
+                        "filled_at": o.filled_at.isoformat() if o.filled_at else None,
+                    })
         except Exception as e:
             recent_trades = []
 
@@ -414,7 +423,7 @@ class TradingCompetition:
             # Get current positions
             try:
                 positions = trading_client.get_all_positions()
-                position_symbols = {p.symbol for p in positions if p.symbol in SYMBOLS}
+                position_symbols = {p.symbol for p in positions if isinstance(p, Position) and p.symbol in SYMBOLS}
             except Exception as e:
                 console.print(f"[yellow]Warning: Failed to get positions for {agent_name}: {e}[/yellow]")
                 continue
@@ -491,15 +500,13 @@ class TradingCompetition:
         try:
             # Get recent closed orders for the symbol
             orders = trading_client.get_orders(
-                status="closed",
-                symbols=[symbol],
-                limit=20
+                GetOrdersRequest(status=QueryOrderStatus.CLOSED, symbols=[symbol], limit=20)
             )
 
             # Find orders after the decision timestamp
             relevant_orders = [
                 o for o in orders
-                if o.filled_at and o.filled_at >= since
+                if isinstance(o, Order) and o.filled_at and o.filled_at >= since
             ]
 
             if not relevant_orders:
@@ -508,7 +515,7 @@ class TradingCompetition:
             # Simple P&L calculation: sum of (side * qty * price)
             total_pnl = 0.0
             for order in relevant_orders:
-                if order.filled_avg_price and order.filled_qty:
+                if order.filled_avg_price and order.filled_qty and order.side is not None:
                     price = float(order.filled_avg_price)
                     qty = float(order.filled_qty)
                     # Buy orders reduce P&L, sell orders increase it
@@ -594,7 +601,7 @@ class TradingCompetition:
                 agent_name, lesson[:100], tags
             )
 
-            if existing:
+            if existing and existing.id is not None:
                 # Update existing learning
                 if outcome_status == OutcomeStatus.WIN.value:
                     await LearningStore.increment_learning_success(existing.id)
@@ -640,13 +647,16 @@ class TradingCompetition:
                 account = trading_client.get_account()
                 positions = trading_client.get_all_positions()
 
+                if not isinstance(account, TradeAccount):
+                    continue
+
                 equity = float(account.equity)
                 cash = float(account.cash)
                 positions_value = sum(
-                    float(p.market_value) for p in positions if p.symbol in SYMBOLS
+                    float(p.market_value) for p in positions if isinstance(p, Position) and p.symbol in SYMBOLS
                 )
                 unrealized_pnl = sum(
-                    float(p.unrealized_pl) for p in positions if p.symbol in SYMBOLS
+                    float(p.unrealized_pl) for p in positions if isinstance(p, Position) and p.symbol in SYMBOLS
                 )
 
                 # Get agent for strategy info
@@ -681,7 +691,7 @@ class TradingCompetition:
 
     async def run_hourly_cycle(self):
         """Run the hourly decision cycle for both agents."""
-        if not self.is_market_open():
+        if not self.skip_market_check and not self.is_market_open():
             console.print("[yellow]Market is closed. Waiting...[/yellow]")
             return
 
@@ -732,6 +742,9 @@ class TradingCompetition:
             try:
                 account = trading_client.get_account()
                 agent = self.claude_agent if agent_name == "claude" else self.grok_agent
+
+                if not isinstance(account, TradeAccount):
+                    continue
 
                 score = CompetitionScore(
                     agent_name=agent_name,

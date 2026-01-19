@@ -2,7 +2,7 @@
 import os
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 import anthropic
 
 from .base_agent import (
@@ -77,7 +77,7 @@ class ClaudeAgent(BaseTradingAgent):
     def __init__(self, tools: dict):
         super().__init__("claude", tools)
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.model = "claude-opus-4-5-20250514"  # Claude Opus 4.5
+        self.model = "claude-opus-4-5-20251101"  # Claude Opus 4.5
         self.current_strategy_explanation = ""
 
         # Combine all tool schemas
@@ -103,9 +103,9 @@ class ClaudeAgent(BaseTradingAgent):
         if recent_outcomes:
             context_message += recent_outcomes
 
-        messages = [{"role": "user", "content": context_message}]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": context_message}]
 
-        tool_calls_made = []
+        tool_calls_made: list[dict[str, Any]] = []
         max_iterations = 5  # Limit tool call iterations
 
         for _ in range(max_iterations):
@@ -113,18 +113,18 @@ class ClaudeAgent(BaseTradingAgent):
                 model=self.model,
                 max_tokens=4096,
                 system=CLAUDE_SYSTEM_PROMPT,
-                tools=self.tool_schemas,
-                messages=messages,
+                tools=cast(Any, self.tool_schemas),
+                messages=cast(Any, messages),
             )
 
             # Check if Claude wants to use tools
             if response.stop_reason == "tool_use":
                 # Process tool calls
-                tool_results = []
+                tool_results: list[dict[str, Any]] = []
                 for content_block in response.content:
                     if content_block.type == "tool_use":
                         tool_name = content_block.name
-                        tool_input = content_block.input
+                        tool_input = cast(dict[str, Any], content_block.input)
                         tool_id = content_block.id
 
                         # Execute the tool
@@ -142,7 +142,7 @@ class ClaudeAgent(BaseTradingAgent):
                         )
 
                 # Add assistant response and tool results to messages
-                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "assistant", "content": cast(Any, response.content)})
                 messages.append({"role": "user", "content": tool_results})
 
             else:

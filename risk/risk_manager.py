@@ -1,8 +1,9 @@
 """Risk manager enforcing hard limits on trading decisions."""
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
+from dataclasses import dataclass, field
+from datetime import datetime, date
+from typing import Any
 from alpaca.trading.client import TradingClient
+from alpaca.trading.models import TradeAccount, Position
 
 from config.settings import RISK_LIMITS, SYMBOLS
 from agents.base_agent import TradingDecision, ActionType
@@ -14,12 +15,8 @@ class RiskValidationResult:
 
     valid: bool
     message: str
-    adjusted_quantity: Optional[int] = None
-    violations: list[str] = None
-
-    def __post_init__(self):
-        if self.violations is None:
-            self.violations = []
+    adjusted_quantity: int | None = None
+    violations: list[str] = field(default_factory=list)
 
 
 class RiskManager:
@@ -32,8 +29,8 @@ class RiskManager:
     def __init__(self, trading_client: TradingClient, agent_name: str):
         self.client = trading_client
         self.agent_name = agent_name
-        self.daily_pnl_start: Optional[float] = None
-        self.last_reset_date: Optional[datetime] = None
+        self.daily_pnl_start: float | None = None
+        self.last_reset_date: date | None = None
 
     def validate_decision(
         self, decision: TradingDecision, current_price: float
@@ -84,7 +81,10 @@ class RiskManager:
 
             # Get account info for remaining validations
             account = self.client.get_account()
-            equity = float(account.equity)
+            if isinstance(account, dict):
+                equity = float(account.get("equity", 0))
+            else:
+                equity = float(account.equity or 0)
 
             # 5. Check daily loss limit
             daily_loss_check = self._check_daily_loss_limit(equity)
@@ -93,7 +93,10 @@ class RiskManager:
 
             # 6. Check max positions
             positions = self.client.get_all_positions()
-            current_positions = [p for p in positions if p.symbol in SYMBOLS]
+            current_positions = [
+                p for p in positions
+                if hasattr(p, 'symbol') and p.symbol in SYMBOLS
+            ]
 
             if len(current_positions) >= RISK_LIMITS.max_positions:
                 # Check if this is for a symbol we already hold
@@ -134,7 +137,9 @@ class RiskManager:
             # 8. Check total exposure
             if decision.quantity and current_price > 0:
                 order_value = decision.quantity * current_price
-                current_exposure = sum(float(p.market_value) for p in current_positions)
+                current_exposure = sum(
+                    float(getattr(p, 'market_value', 0) or 0) for p in current_positions
+                )
                 total_exposure = current_exposure + order_value
                 exposure_percent = total_exposure / equity
 
@@ -225,7 +230,7 @@ class RiskManager:
         return RiskValidationResult(valid=True, message="Trading allowed")
 
     def calculate_position_size(
-        self, current_price: float, stop_loss: float, max_risk_percent: float = None
+        self, current_price: float, stop_loss: float, max_risk_percent: float | None = None
     ) -> int:
         """
         Calculate maximum position size based on risk limits.
@@ -242,7 +247,10 @@ class RiskManager:
             max_risk_percent = RISK_LIMITS.max_risk_per_trade
 
         account = self.client.get_account()
-        equity = float(account.equity)
+        if isinstance(account, dict):
+            equity = float(account.get("equity", 0))
+        else:
+            equity = float(account.equity or 0)
 
         risk_per_share = abs(current_price - stop_loss)
         if risk_per_share <= 0:
@@ -256,13 +264,21 @@ class RiskManager:
 
         return min(max_shares, max_exposure_shares)
 
-    def get_risk_status(self) -> dict:
+    def get_risk_status(self) -> dict[str, Any]:
         """Get current risk status for monitoring."""
         account = self.client.get_account()
-        equity = float(account.equity)
+        if isinstance(account, dict):
+            equity = float(account.get("equity", 0))
+        else:
+            equity = float(account.equity or 0)
         positions = self.client.get_all_positions()
 
-        current_exposure = sum(float(p.market_value) for p in positions if p.symbol in SYMBOLS)
+        # Filter to Position objects with symbols in our list
+        valid_positions = [
+            p for p in positions
+            if hasattr(p, 'symbol') and p.symbol in SYMBOLS
+        ]
+        current_exposure = sum(float(getattr(p, 'market_value', 0) or 0) for p in valid_positions)
         exposure_percent = (current_exposure / equity * 100) if equity > 0 else 0
 
         # Daily P&L
@@ -278,7 +294,7 @@ class RiskManager:
             "current_exposure": current_exposure,
             "exposure_percent": round(exposure_percent, 1),
             "max_exposure_percent": RISK_LIMITS.max_exposure * 100,
-            "positions_count": len([p for p in positions if p.symbol in SYMBOLS]),
+            "positions_count": len(valid_positions),
             "max_positions": RISK_LIMITS.max_positions,
             "daily_pnl": round(daily_pnl, 2),
             "daily_pnl_percent": round(daily_pnl_percent, 2),

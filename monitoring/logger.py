@@ -380,7 +380,7 @@ class TradeLogger:
             GROUP BY agent, strategy
         """
         )
-        strategy_stats = {}
+        strategy_stats: dict[str, dict[str, int]] = {}
         for row in cursor.fetchall():
             agent, strategy, count = row
             if agent not in strategy_stats:

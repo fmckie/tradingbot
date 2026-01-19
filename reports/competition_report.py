@@ -193,8 +193,8 @@ No competition data available yet.
             lines.append("   No significant trades recorded yet.")
 
         # Strategy breakdown
-        strategy_counts = {}
-        strategy_wins = {}
+        strategy_counts: dict[str, int] = {}
+        strategy_wins: dict[str, int] = {}
         for ep in completed:
             strategy = ep.decision_made.get('strategy', 'unknown')
             strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
@@ -246,7 +246,7 @@ No competition data available yet.
                 )
 
             # Count categories
-            category_counts = {}
+            category_counts: dict[str, int] = {}
             for l in all_learnings:
                 category_counts[l.category] = category_counts.get(l.category, 0) + 1
 
@@ -255,7 +255,7 @@ No competition data available yet.
                 lines.append(f"  - {cat.upper()}: {count} learnings")
 
             # Tag frequency
-            tag_counts = {}
+            tag_counts: dict[str, int] = {}
             for l in all_learnings:
                 for tag in l.tags:
                     tag_counts[tag.upper()] = tag_counts.get(tag.upper(), 0) + 1

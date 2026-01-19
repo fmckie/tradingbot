@@ -11,6 +11,7 @@ from alpaca.data.requests import (
     StockSnapshotRequest,
 )
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.enums import DataFeed
 
 from config.settings import SYMBOLS
 
@@ -65,7 +66,7 @@ class MarketDataProvider:
         if symbol not in SYMBOLS:
             raise ValueError(f"Symbol {symbol} not allowed. Only {SYMBOLS} permitted.")
 
-        request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+        request = StockLatestQuoteRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
         quotes = self.client.get_stock_latest_quote(request)
         quote_data = quotes[symbol]
 
@@ -73,6 +74,7 @@ class MarketDataProvider:
         trade_request = StockTradesRequest(
             symbol_or_symbols=symbol,
             limit=1,
+            feed=DataFeed.IEX,
         )
         trades = self.client.get_stock_trades(trade_request)
         last_price = trades[symbol][0].price if trades[symbol] else quote_data.ask_price
@@ -121,13 +123,28 @@ class MarketDataProvider:
             start=start,
             end=end,
             limit=limit,
+            feed=DataFeed.IEX,
         )
 
         bars = self.client.get_stock_bars(request)
+        # Access the DataFrame from the response (BarSet has .df property)
         df = bars.df
 
-        if symbol in df.index.get_level_values("symbol"):
-            df = df.loc[symbol].reset_index()
+        # Handle empty DataFrame
+        if df.empty:
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+
+        # Handle MultiIndex: check if 'symbol' is a valid level name
+        if isinstance(df.index, pd.MultiIndex):
+            level_names = [name for name in df.index.names if name is not None]
+            if "symbol" in level_names:
+                df = df.loc[symbol].reset_index()
+            else:
+                # MultiIndex without named 'symbol' level - just reset
+                df = df.reset_index(drop=False)
+                # Remove symbol column if it exists from reset
+                if "level_0" in df.columns:
+                    df = df.drop(columns=["level_0"])
         else:
             df = df.reset_index()
 
@@ -140,7 +157,7 @@ class MarketDataProvider:
         if symbol not in SYMBOLS:
             raise ValueError(f"Symbol {symbol} not allowed. Only {SYMBOLS} permitted.")
 
-        request = StockSnapshotRequest(symbol_or_symbols=symbol)
+        request = StockSnapshotRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
         snapshots = self.client.get_stock_snapshot(request)
         snap = snapshots[symbol]
 
@@ -173,6 +190,7 @@ class MarketDataProvider:
         request = StockTradesRequest(
             symbol_or_symbols=symbol,
             limit=limit,
+            feed=DataFeed.IEX,
         )
         trades = self.client.get_stock_trades(request)
 

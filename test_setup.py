@@ -80,12 +80,17 @@ print("-" * 40)
 if not missing or all(v not in missing for v in ["CLAUDE_ALPACA_API_KEY", "CLAUDE_ALPACA_SECRET_KEY"]):
     try:
         from config.alpaca_config import get_claude_client
+        from alpaca.trading.models import TradeAccount
         trading_client, data_client = get_claude_client()
         account = trading_client.get_account()
-        print(f"  ✓ Claude account connected!")
-        print(f"    Equity: ${float(account.equity):,.2f}")
-        print(f"    Cash: ${float(account.cash):,.2f}")
-        print(f"    Buying Power: ${float(account.buying_power):,.2f}")
+        # Type guard: account is TradeAccount, not dict
+        if isinstance(account, TradeAccount):
+            print(f"  ✓ Claude account connected!")
+            print(f"    Equity: ${float(account.equity or 0):,.2f}")
+            print(f"    Cash: ${float(account.cash or 0):,.2f}")
+            print(f"    Buying Power: ${float(account.buying_power or 0):,.2f}")
+        else:
+            print(f"  ✗ Claude account: unexpected response type")
     except Exception as e:
         print(f"  ✗ Claude account failed: {e}")
 else:
@@ -94,12 +99,17 @@ else:
 if not missing or all(v not in missing for v in ["GROK_ALPACA_API_KEY", "GROK_ALPACA_SECRET_KEY"]):
     try:
         from config.alpaca_config import get_grok_client
+        from alpaca.trading.models import TradeAccount
         trading_client, data_client = get_grok_client()
         account = trading_client.get_account()
-        print(f"  ✓ Grok account connected!")
-        print(f"    Equity: ${float(account.equity):,.2f}")
-        print(f"    Cash: ${float(account.cash):,.2f}")
-        print(f"    Buying Power: ${float(account.buying_power):,.2f}")
+        # Type guard: account is TradeAccount, not dict
+        if isinstance(account, TradeAccount):
+            print(f"  ✓ Grok account connected!")
+            print(f"    Equity: ${float(account.equity or 0):,.2f}")
+            print(f"    Cash: ${float(account.cash or 0):,.2f}")
+            print(f"    Buying Power: ${float(account.buying_power or 0):,.2f}")
+        else:
+            print(f"  ✗ Grok account: unexpected response type")
     except Exception as e:
         print(f"  ✗ Grok account failed: {e}")
 else:

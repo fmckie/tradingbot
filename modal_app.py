@@ -171,3 +171,45 @@ def run_once():
 
     volume.commit()
     return {"status": "test_completed", "timestamp": now.isoformat()}
+
+
+# Dry run - bypasses market hours check for testing
+@app.function(
+    image=image,
+    volumes={"/data": volume},
+    secrets=[modal.Secret.from_name("trading-secrets")],
+    timeout=600,  # 10 min timeout for full cycle
+)
+def run_dry():
+    """Run a full trading cycle ignoring market hours - for testing."""
+    import asyncio
+    import os
+    import sys
+
+    sys.path.insert(0, "/app")
+    os.chdir("/app")
+    os.environ["DATABASE_PATH"] = "/data/trading_competition.sqlite"
+
+    from main import TradingCompetition
+
+    et = pytz.timezone("America/New_York")
+    now = datetime.now(et)
+    print(f"[DRY RUN] Running full cycle at {now.strftime('%Y-%m-%d %H:%M ET')}")
+    print("[DRY RUN] Market hours check DISABLED")
+
+    async def _run_with_db_init():
+        # Initialize PostgreSQL schema (idempotent)
+        try:
+            from database.postgres_client import init_database
+            await init_database()
+        except Exception as e:
+            print(f"[WARN] Learning system unavailable: {e}")
+
+        # Run with market check disabled
+        competition = TradingCompetition(skip_market_check=True)
+        await competition.run_hourly_cycle()
+
+    asyncio.run(_run_with_db_init())
+
+    volume.commit()
+    return {"status": "dry_run_completed", "timestamp": now.isoformat()}

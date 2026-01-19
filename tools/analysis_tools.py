@@ -110,8 +110,8 @@ class AnalysisTools:
             }
 
         # Relative strength
-        googl_change = context["GOOGL"]["daily_change_percent"]
-        tsla_change = context["TSLA"]["daily_change_percent"]
+        googl_change = float(context["GOOGL"]["daily_change_percent"])
+        tsla_change = float(context["TSLA"]["daily_change_percent"])
 
         return {
             "symbols": context,
@@ -153,7 +153,7 @@ class AnalysisTools:
             atr_percent = (ind.atr / snap.latest_trade_price) * 100 if snap.latest_trade_price > 0 else 0
 
             # Calculate momentum score (-100 to +100)
-            momentum_score = 0
+            momentum_score: float = 0
             momentum_score += (50 - ind.rsi) * -1  # RSI contribution
             momentum_score += 50 if ind.macd.histogram > 0 else -50  # MACD contribution
             momentum_score = max(-100, min(100, momentum_score))
@@ -180,7 +180,7 @@ class AnalysisTools:
         recommendations = []
 
         # Momentum trade opportunity
-        if abs(googl["momentum_score"]) > abs(tsla["momentum_score"]):
+        if abs(float(googl["momentum_score"])) > abs(float(tsla["momentum_score"])):
             better_momentum = "GOOGL"
         else:
             better_momentum = "TSLA"
@@ -193,7 +193,7 @@ class AnalysisTools:
             recommendations.append(f"TSLA at Bollinger extreme ({tsla['bollinger_position']})")
 
         # Lower volatility (safer)
-        if googl["volatility_atr_percent"] < tsla["volatility_atr_percent"]:
+        if float(googl["volatility_atr_percent"]) < float(tsla["volatility_atr_percent"]):
             recommendations.append("GOOGL has lower volatility (safer)")
         else:
             recommendations.append("TSLA has lower volatility (safer)")

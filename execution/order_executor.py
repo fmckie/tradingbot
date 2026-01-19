@@ -1,15 +1,17 @@
 """Order execution handling for Alpaca trading."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from alpaca.trading.client import TradingClient
+from alpaca.trading.models import Order, Position
 from alpaca.trading.requests import (
     MarketOrderRequest,
     LimitOrderRequest,
     TakeProfitRequest,
     StopLossRequest,
+    GetOrdersRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, QueryOrderStatus
 
 from agents.base_agent import TradingDecision, ActionType
 from risk.risk_manager import RiskManager, RiskValidationResult
@@ -27,11 +29,7 @@ class ExecutionResult:
     risk_validation: RiskValidationResult
     filled_price: Optional[float] = None
     filled_quantity: Optional[int] = None
-    timestamp: datetime = None
-
-    def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
+    timestamp: datetime = field(default_factory=datetime.now)
 
 
 class OrderExecutor:
@@ -83,8 +81,8 @@ class OrderExecutor:
                 risk_validation=risk_result,
             )
 
-        # Use adjusted quantity if provided
-        quantity = risk_result.adjusted_quantity or decision.quantity
+        # Use adjusted quantity if provided, default to decision.quantity
+        quantity = risk_result.adjusted_quantity if risk_result.adjusted_quantity is not None else decision.quantity
 
         # Execute based on action type
         if decision.action == ActionType.HOLD:
@@ -100,6 +98,14 @@ class OrderExecutor:
             return await self._close_position(decision, risk_result)
 
         elif decision.action in [ActionType.BUY, ActionType.SELL]:
+            if quantity is None:
+                return ExecutionResult(
+                    success=False,
+                    order_id=None,
+                    message="No quantity specified for order",
+                    decision=decision,
+                    risk_validation=risk_result,
+                )
             return await self._place_order(decision, quantity, current_price, risk_result)
 
         return ExecutionResult(
@@ -154,9 +160,14 @@ class OrderExecutor:
             # Submit the order
             order = self.client.submit_order(order_request)
 
+            # Handle Order object properly - extract id if present
+            order_id: Optional[str] = None
+            if hasattr(order, 'id') and order.id is not None:
+                order_id = str(order.id)
+
             return ExecutionResult(
                 success=True,
-                order_id=str(order.id),
+                order_id=order_id,
                 message=f"{decision.action.value.upper()} order placed for {quantity} shares of {decision.symbol}",
                 decision=decision,
                 risk_validation=risk_result,
@@ -188,7 +199,12 @@ class OrderExecutor:
         try:
             # Verify position exists
             positions = self.client.get_all_positions()
-            position = next((p for p in positions if p.symbol == decision.symbol), None)
+            position: Optional[Any] = None
+            for p in positions:
+                # Check for required attributes instead of strict type check
+                if hasattr(p, 'symbol') and hasattr(p, 'qty') and p.symbol == decision.symbol:
+                    position = p
+                    break
 
             if not position:
                 return ExecutionResult(
@@ -202,13 +218,21 @@ class OrderExecutor:
             # Close the position
             order = self.client.close_position(decision.symbol)
 
+            # Extract order ID if available
+            order_id: Optional[str] = None
+            if hasattr(order, 'id') and order.id is not None:
+                order_id = str(order.id)
+
+            # Get quantity from position
+            position_qty = int(float(position.qty)) if position.qty is not None else 0
+
             return ExecutionResult(
                 success=True,
-                order_id=str(order.id) if hasattr(order, "id") else None,
-                message=f"Position closed for {decision.symbol} ({int(position.qty)} shares)",
+                order_id=order_id,
+                message=f"Position closed for {decision.symbol} ({position_qty} shares)",
                 decision=decision,
                 risk_validation=risk_result,
-                filled_quantity=int(position.qty),
+                filled_quantity=position_qty,
             )
 
         except Exception as e:
@@ -220,29 +244,36 @@ class OrderExecutor:
                 risk_validation=risk_result,
             )
 
-    def get_open_orders(self) -> list[dict]:
+    def get_open_orders(self) -> list[dict[str, Any]]:
         """Get all open orders for monitoring."""
-        orders = self.client.get_orders(status="open")
+        request = GetOrdersRequest(status=QueryOrderStatus.OPEN)
+        orders = self.client.get_orders(request)
 
-        return [
-            {
-                "order_id": str(o.id),
+        result: list[dict[str, Any]] = []
+        for o in orders:
+            # Check for required attributes instead of strict type check
+            if not hasattr(o, 'symbol') or not hasattr(o, 'id'):
+                continue
+            if o.symbol not in SYMBOLS:
+                continue
+            result.append({
+                "order_id": str(o.id) if o.id is not None else "",
                 "symbol": o.symbol,
-                "side": o.side.value,
-                "quantity": int(o.qty),
-                "filled": int(o.filled_qty) if o.filled_qty else 0,
-                "type": o.type.value,
-                "status": o.status.value,
-                "created_at": o.created_at.isoformat(),
-            }
-            for o in orders
-            if o.symbol in SYMBOLS
-        ]
+                "side": o.side.value if o.side is not None else "",
+                "quantity": int(float(o.qty)) if o.qty is not None else 0,
+                "filled": int(float(o.filled_qty)) if o.filled_qty is not None else 0,
+                "type": o.type.value if o.type is not None else "",
+                "status": o.status.value if o.status is not None else "",
+                "created_at": o.created_at.isoformat() if o.created_at is not None else "",
+            })
+        return result
 
     def cancel_all_orders(self) -> int:
         """Cancel all open orders. Returns count of cancelled orders."""
         try:
+            # Get count of open orders before cancellation
+            count = len(self.get_open_orders())
             self.client.cancel_orders()
-            return len(self.get_open_orders())
+            return count
         except Exception:
             return 0

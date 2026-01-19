@@ -183,7 +183,7 @@ class Scoreboard:
         equities = sorted([s.current_equity for s in self.scores.values()], reverse=True)
         return equities[0] - equities[1]
 
-    def render(self) -> str:
+    def render(self) -> Panel:
         """Render the scoreboard as a rich panel."""
         # Calculate competition day
         days_elapsed = (datetime.now() - self.competition_start).days + 1
@@ -270,7 +270,7 @@ class Scoreboard:
             border_style="yellow",
         )
 
-    def render_decisions(self) -> str:
+    def render_decisions(self) -> Panel:
         """Render recent decisions panel."""
         decisions_text = ""
 
@@ -287,13 +287,13 @@ class Scoreboard:
             border_style="cyan",
         )
 
-    def render_strategy_analysis(self) -> str:
+    def render_strategy_analysis(self) -> Panel:
         """Render strategy analysis panel."""
         analysis_text = ""
 
         for name, score in sorted(self.scores.items()):
             if score.strategies_used:
-                most_used = max(score.strategies_used, key=score.strategies_used.get)
+                most_used = max(score.strategies_used, key=lambda k: score.strategies_used[k])
                 usage = score.strategies_used.get(most_used, 0)
                 analysis_text += f"[bold]{name.upper()}[/bold]: Primarily {most_used} ({usage} uses)\n"
             else:

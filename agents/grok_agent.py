@@ -127,7 +127,7 @@ class GrokAgent(BaseTradingAgent):
             {"role": "user", "content": context_message},
         ]
 
-        tool_calls_made = []
+        tool_calls_made: list[dict[str, Any]] = []
         max_iterations = 5
 
         async with httpx.AsyncClient() as client:

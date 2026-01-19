@@ -6,8 +6,10 @@ from alpaca.trading.requests import (
     MarketOrderRequest,
     LimitOrderRequest,
     StopLimitOrderRequest,
+    GetOrdersRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderType, QueryOrderStatus
+from alpaca.trading.models import Position, TradeAccount, Order
 
 from config.settings import SYMBOLS, RISK_LIMITS
 
@@ -173,23 +175,26 @@ class TradingTools:
         total_unrealized_pnl = 0.0
 
         for pos in positions:
+            # Narrow type: positions can be Position | str
+            if isinstance(pos, str):
+                continue
             if pos.symbol in SYMBOLS:  # Only show allowed symbols
-                pos_value = float(pos.market_value)
-                unrealized = float(pos.unrealized_pl)
+                pos_value = float(pos.market_value) if pos.market_value else 0.0
+                unrealized = float(pos.unrealized_pl) if pos.unrealized_pl else 0.0
                 total_value += pos_value
                 total_unrealized_pnl += unrealized
 
                 position_list.append(
                     {
                         "symbol": pos.symbol,
-                        "quantity": int(pos.qty),
-                        "side": "long" if int(pos.qty) > 0 else "short",
-                        "avg_entry_price": float(pos.avg_entry_price),
-                        "current_price": float(pos.current_price),
+                        "quantity": int(pos.qty) if pos.qty else 0,
+                        "side": "long" if (int(pos.qty) if pos.qty else 0) > 0 else "short",
+                        "avg_entry_price": float(pos.avg_entry_price) if pos.avg_entry_price else 0.0,
+                        "current_price": float(pos.current_price) if pos.current_price else 0.0,
                         "market_value": pos_value,
                         "unrealized_pnl": unrealized,
-                        "unrealized_pnl_percent": float(pos.unrealized_plpc) * 100,
-                        "change_today_percent": float(pos.change_today) * 100,
+                        "unrealized_pnl_percent": float(pos.unrealized_plpc) * 100 if pos.unrealized_plpc else 0.0,
+                        "change_today_percent": float(pos.change_today) * 100 if pos.change_today else 0.0,
                     }
                 )
 
@@ -204,17 +209,25 @@ class TradingTools:
         """Get account information."""
         account = self.client.get_account()
 
+        # Narrow type: account can be TradeAccount | dict[str, Any]
+        if isinstance(account, dict):
+            return {"error": "Unexpected account response format"}
+
+        equity = float(account.equity) if account.equity else 0.0
+        cash = float(account.cash) if account.cash else 0.0
+        buying_power = float(account.buying_power) if account.buying_power else 0.0
+        portfolio_value = float(account.portfolio_value) if account.portfolio_value else 0.0
+        last_equity = float(account.last_equity) if account.last_equity else 0.0
+
         return {
-            "equity": float(account.equity),
-            "cash": float(account.cash),
-            "buying_power": float(account.buying_power),
-            "portfolio_value": float(account.portfolio_value),
-            "last_equity": float(account.last_equity),
-            "daily_pnl": float(account.equity) - float(account.last_equity),
-            "daily_pnl_percent": (float(account.equity) - float(account.last_equity))
-            / float(account.last_equity)
-            * 100
-            if float(account.last_equity) > 0
+            "equity": equity,
+            "cash": cash,
+            "buying_power": buying_power,
+            "portfolio_value": portfolio_value,
+            "last_equity": last_equity,
+            "daily_pnl": equity - last_equity,
+            "daily_pnl_percent": (equity - last_equity) / last_equity * 100
+            if last_equity > 0
             else 0.0,
             "pattern_day_trader": account.pattern_day_trader,
             "trading_blocked": account.trading_blocked,
@@ -226,32 +239,37 @@ class TradingTools:
         status = params.get("status", "all")
         limit = min(params.get("limit", 20), 100)
 
-        # Map status to Alpaca filter
+        # Map status to Alpaca filter using GetOrdersRequest
         if status == "open":
-            orders = self.client.get_orders(status="open", limit=limit)
+            request = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=limit)
         elif status == "closed":
-            orders = self.client.get_orders(status="closed", limit=limit)
+            request = GetOrdersRequest(status=QueryOrderStatus.CLOSED, limit=limit)
         else:
-            orders = self.client.get_orders(limit=limit)
+            request = GetOrdersRequest(status=QueryOrderStatus.ALL, limit=limit)
+
+        orders = self.client.get_orders(request)
 
         order_list = []
         for order in orders:
+            # Narrow type: order can be Order | str
+            if isinstance(order, str):
+                continue
             if order.symbol in SYMBOLS:
                 order_list.append(
                     {
                         "order_id": str(order.id),
                         "symbol": order.symbol,
-                        "side": order.side.value,
-                        "type": order.type.value,
-                        "quantity": int(order.qty),
+                        "side": order.side.value if order.side else "unknown",
+                        "type": order.type.value if order.type else "unknown",
+                        "quantity": int(order.qty) if order.qty else 0,
                         "filled_quantity": int(order.filled_qty) if order.filled_qty else 0,
                         "limit_price": float(order.limit_price) if order.limit_price else None,
                         "stop_price": float(order.stop_price) if order.stop_price else None,
                         "filled_avg_price": float(order.filled_avg_price)
                         if order.filled_avg_price
                         else None,
-                        "status": order.status.value,
-                        "created_at": order.created_at.isoformat(),
+                        "status": order.status.value if order.status else "unknown",
+                        "created_at": order.created_at.isoformat() if order.created_at else None,
                         "filled_at": order.filled_at.isoformat() if order.filled_at else None,
                     }
                 )
@@ -277,17 +295,29 @@ class TradingTools:
 
         # Get current account and validate risk
         account = self.client.get_account()
-        equity = float(account.equity)
+
+        # Narrow type: account can be TradeAccount | dict[str, Any]
+        if isinstance(account, dict):
+            return {"error": "Unexpected account response format"}
+
+        equity = float(account.equity) if account.equity else 0.0
+        last_equity = float(account.last_equity) if account.last_equity else 0.0
 
         # Get current price for validation
         try:
             positions = self.client.get_all_positions()
-            current_positions = {p.symbol: p for p in positions if p.symbol in SYMBOLS}
+            current_positions: dict[str, Position] = {}
+            for p in positions:
+                # Narrow type: p can be Position | str
+                if isinstance(p, str):
+                    continue
+                if p.symbol in SYMBOLS:
+                    current_positions[p.symbol] = p
         except Exception:
             current_positions = {}
 
         # Check daily loss limit
-        daily_pnl = float(account.equity) - float(account.last_equity)
+        daily_pnl = equity - last_equity
         if daily_pnl < -equity * RISK_LIMITS.daily_loss_limit:
             return {
                 "error": f"Daily loss limit ({RISK_LIMITS.daily_loss_limit*100}%) reached. No more trading today.",
@@ -304,6 +334,7 @@ class TradingTools:
         try:
             order_side = OrderSide.BUY if side == "buy" else OrderSide.SELL
 
+            order_request: MarketOrderRequest | LimitOrderRequest
             if order_type == "market":
                 order_request = MarketOrderRequest(
                     symbol=symbol,
@@ -324,14 +355,18 @@ class TradingTools:
 
             order = self.client.submit_order(order_request)
 
-            result = {
+            # Narrow type: order can be Order | dict[str, Any]
+            if isinstance(order, dict):
+                return {"error": "Unexpected order response format"}
+
+            result: dict[str, Any] = {
                 "success": True,
                 "order_id": str(order.id),
                 "symbol": symbol,
                 "side": side,
                 "quantity": quantity,
                 "order_type": order_type,
-                "status": order.status.value,
+                "status": order.status.value if order.status else "unknown",
                 "message": f"Order placed successfully for {quantity} shares of {symbol}",
             }
 
@@ -358,7 +393,14 @@ class TradingTools:
         try:
             # Check if position exists
             positions = self.client.get_all_positions()
-            position = next((p for p in positions if p.symbol == symbol), None)
+            position: Position | None = None
+            for p in positions:
+                # Narrow type: p can be Position | str
+                if isinstance(p, str):
+                    continue
+                if p.symbol == symbol:
+                    position = p
+                    break
 
             if not position:
                 return {"error": f"No open position found for {symbol}"}
@@ -369,8 +411,8 @@ class TradingTools:
             return {
                 "success": True,
                 "symbol": symbol,
-                "closed_quantity": int(position.qty),
-                "realized_pnl": float(position.unrealized_pl),
+                "closed_quantity": int(position.qty) if position.qty else 0,
+                "realized_pnl": float(position.unrealized_pl) if position.unrealized_pl else 0.0,
                 "message": f"Position closed for {symbol}",
             }
 
@@ -381,8 +423,11 @@ class TradingTools:
         """Cancel a pending order."""
         order_id = params.get("order_id")
 
+        if not order_id:
+            return {"error": "order_id is required"}
+
         try:
-            self.client.cancel_order_by_id(order_id)
+            self.client.cancel_order_by_id(str(order_id))
             return {
                 "success": True,
                 "order_id": order_id,

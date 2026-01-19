@@ -208,7 +208,7 @@ class BaseTradingAgent(ABC):
         """Get the most frequently used strategy."""
         if not self.state.strategies_used:
             return "none"
-        return max(self.state.strategies_used, key=self.state.strategies_used.get)
+        return max(self.state.strategies_used, key=lambda k: self.state.strategies_used[k])
 
     def get_performance_summary(self) -> dict:
         """Get agent performance summary."""
