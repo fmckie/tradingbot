@@ -1,0 +1,16 @@
+# AI Trading Competition - Dependencies
+alpaca-py>=0.21.0          # Alpaca trading SDK
+anthropic>=0.18.0          # Claude API
+httpx>=0.27.0              # For Grok API calls
+pandas>=2.0.0              # Data manipulation
+numpy>=1.24.0              # Calculations
+ta>=0.11.0                 # Technical analysis library
+python-dotenv>=1.0.0       # Environment variables
+schedule>=1.2.0            # Task scheduling
+rich>=13.0.0               # Terminal UI
+sqlite-utils>=3.35         # Trade logging
+pytz>=2024.1               # Timezone handling
+modal>=0.64.0              # Cloud deployment
+
+# Learning System
+asyncpg>=0.29.0            # Async PostgreSQL driver for learning system
