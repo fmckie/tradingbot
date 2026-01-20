@@ -10,6 +10,7 @@ from alpaca.data.requests import (
     StockTradesRequest,
     StockSnapshotRequest,
 )
+from alpaca.data.models import BarSet
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.enums import DataFeed
 
@@ -128,6 +129,8 @@ class MarketDataProvider:
 
         bars = self.client.get_stock_bars(request)
         # Access the DataFrame from the response (BarSet has .df property)
+        if not isinstance(bars, BarSet):
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
         df = bars.df
 
         # Handle empty DataFrame

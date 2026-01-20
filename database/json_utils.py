@@ -36,15 +36,21 @@ class SafeJSONEncoder(json.JSONEncoder):
             if isinstance(obj, np.integer):
                 return int(obj)
             if isinstance(obj, np.ndarray):
-                return self._sanitize_array(obj.tolist())
+                arr = obj.tolist()
+                if isinstance(arr, list):
+                    return self._sanitize_array(arr)
+                # Scalar ndarray (0-d array)
+                if isinstance(arr, float) and (math.isnan(arr) or math.isinf(arr)):
+                    return None
+                return arr
             if isinstance(obj, np.bool_):
                 return bool(obj)
 
         return super().default(obj)
 
-    def _sanitize_array(self, arr: list) -> list:
+    def _sanitize_array(self, arr: list[Any]) -> list[Any]:
         """Recursively sanitize array values."""
-        result = []
+        result: list[Any] = []
         for item in arr:
             if isinstance(item, list):
                 result.append(self._sanitize_array(item))

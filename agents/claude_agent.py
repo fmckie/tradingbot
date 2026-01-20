@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any, cast
 import anthropic
 
+from database.json_utils import safe_json_dumps
+
 from .base_agent import (
     BaseTradingAgent,
     TradingDecision,
@@ -137,7 +139,7 @@ class ClaudeAgent(BaseTradingAgent):
                             {
                                 "type": "tool_result",
                                 "tool_use_id": tool_id,
-                                "content": json.dumps(result),
+                                "content": safe_json_dumps(result),
                             }
                         )
 

@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Any
 import httpx
 
+from database.json_utils import safe_json_dumps
+
 from .base_agent import (
     BaseTradingAgent,
     TradingDecision,
@@ -150,11 +152,13 @@ class GrokAgent(BaseTradingAgent):
 
                 if response.status_code != 200:
                     # Handle error - return defensive HOLD
+                    error_msg = f"API error: {response.status_code} - {response.text[:200]}"
+                    print(f"Warning: Grok {error_msg}")
                     return TradingDecision(
                         timestamp=context.timestamp,
                         action=ActionType.HOLD,
                         strategy_used=StrategyType.DEFENSIVE,
-                        reasoning=f"API error: {response.status_code} - {response.text}",
+                        reasoning=error_msg,
                         tool_calls=tool_calls_made,
                     )
 
@@ -182,7 +186,7 @@ class GrokAgent(BaseTradingAgent):
                             {
                                 "role": "tool",
                                 "tool_call_id": tool_id,
-                                "content": json.dumps(result),
+                                "content": safe_json_dumps(result),
                             }
                         )
                 else:
@@ -277,6 +281,8 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
         )
 
         if not text_content:
+            print(f"Warning: Grok returned empty content, defaulting to HOLD")
+            decision.reasoning = "API returned empty response - defaulting to defensive HOLD"
             return decision
 
         # Parse the response for trading signals

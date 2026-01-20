@@ -251,7 +251,10 @@ class OrderExecutor:
 
         result: list[dict[str, Any]] = []
         for o in orders:
-            # Check for required attributes instead of strict type check
+            # Type guard: skip if not an Order object (API may return str on error)
+            if not isinstance(o, Order):
+                continue
+            # Check for required attributes
             if not hasattr(o, 'symbol') or not hasattr(o, 'id'):
                 continue
             if o.symbol not in SYMBOLS:
