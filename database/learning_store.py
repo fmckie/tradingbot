@@ -7,6 +7,7 @@ from typing import Optional, Any
 from enum import Enum
 
 from .postgres_client import PostgresClient
+from .json_utils import safe_json_dumps
 
 
 class OutcomeStatus(Enum):
@@ -113,9 +114,9 @@ class LearningStore:
             episode.agent_name,
             episode.timestamp or datetime.now(),
             episode.market_regime,
-            json.dumps(episode.symbols_context),
-            json.dumps(episode.account_state),
-            json.dumps(episode.decision_made),
+            safe_json_dumps(episode.symbols_context),
+            safe_json_dumps(episode.account_state),
+            safe_json_dumps(episode.decision_made),
             episode.outcome_pnl,
             episode.outcome_status
         )
@@ -514,7 +515,7 @@ class LearningStore:
             score.trades_count,
             score.wins,
             score.losses,
-            json.dumps(score.strategies_used),
+            safe_json_dumps(score.strategies_used),
             score.top_learning_id
         )
 
