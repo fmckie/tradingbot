@@ -187,6 +187,7 @@ class RiskManager:
     def check_trading_allowed(self) -> RiskValidationResult:
         """Check if trading is currently allowed based on time."""
         from config.settings import TRADING_HOURS
+        from datetime import timedelta
         import pytz
 
         now = datetime.now(pytz.timezone("America/New_York"))
@@ -207,13 +208,10 @@ class RiskManager:
         if not (market_open <= now <= market_close):
             return RiskValidationResult(valid=False, message="Market is closed")
 
-        # Check buffer periods
-        buffer_start = market_open.replace(
-            minute=market_open.minute + TRADING_HOURS.buffer_minutes
-        )
-        buffer_end = market_close.replace(
-            minute=market_close.minute - TRADING_HOURS.buffer_minutes
-        )
+        # Check buffer periods (use timedelta to avoid negative minute issues)
+        buffer_delta = timedelta(minutes=TRADING_HOURS.buffer_minutes)
+        buffer_start = market_open + buffer_delta
+        buffer_end = market_close - buffer_delta
 
         if now < buffer_start:
             return RiskValidationResult(

@@ -94,8 +94,8 @@ class GrokAgent(BaseTradingAgent):
 
     # Retry configuration
     MAX_RETRIES = 3
-    BASE_RETRY_DELAY = 2.0  # seconds
-    REQUEST_TIMEOUT = 60.0  # seconds
+    BASE_RETRY_DELAY = 5.0  # seconds
+    REQUEST_TIMEOUT = 360.0  # seconds (increased from 180)
 
     def __init__(self, tools: dict):
         super().__init__("grok", tools)
@@ -459,45 +459,59 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
             elif "TSLA" in text_upper:
                 decision.symbol = "TSLA"
 
-            # Try to parse numbers
-            lines = text_content.split("\n")
-            for line in lines:
-                line_upper = line.upper()
-                if "QUANTITY" in line_upper or "SHARES" in line_upper:
-                    try:
-                        numbers = [int(s) for s in line.split() if s.isdigit()]
-                        if numbers:
-                            decision.quantity = numbers[0]
-                    except ValueError:
-                        pass
+            # Try to parse numbers using regex for more precise extraction
+            import re
 
-                if "STOP" in line_upper and "LOSS" in line_upper:
-                    try:
-                        parts = line.replace("$", "").replace(",", "").split()
-                        for part in parts:
-                            try:
-                                price = float(part)
-                                if price > 10:
-                                    decision.stop_loss = price
-                                    break
-                            except ValueError:
-                                continue
-                    except ValueError:
-                        pass
+            # Look for patterns like "QUANTITY: 150" or "QUANTITY: 150,"
+            qty_match = re.search(r'QUANTITY[:\s]+(\d+)', text_content, re.IGNORECASE)
+            if qty_match:
+                decision.quantity = int(qty_match.group(1))
 
-                if "TAKE" in line_upper and "PROFIT" in line_upper:
-                    try:
-                        parts = line.replace("$", "").replace(",", "").split()
-                        for part in parts:
-                            try:
-                                price = float(part)
-                                if price > 10:
-                                    decision.take_profit = price
-                                    break
-                            except ValueError:
-                                continue
-                    except ValueError:
-                        pass
+            # Look for patterns like "STOP_LOSS: 329.69" or "STOP LOSS: $329.69"
+            stop_match = re.search(r'STOP[_\s]*LOSS[:\s]+[$]?([\d.]+)', text_content, re.IGNORECASE)
+            if stop_match:
+                decision.stop_loss = float(stop_match.group(1))
+
+            # Look for patterns like "TAKE_PROFIT: 335.75" or "TAKE PROFIT: $335.75"
+            tp_match = re.search(r'TAKE[_\s]*PROFIT[:\s]+[$]?([\d.]+)', text_content, re.IGNORECASE)
+            if tp_match:
+                decision.take_profit = float(tp_match.group(1))
+
+            # Fallback: try line-by-line parsing if regex didn't find values
+            if not decision.quantity or not decision.stop_loss:
+                lines = text_content.split("\n")
+                for line in lines:
+                    line_upper = line.upper()
+
+                    # Parse quantity if not found yet
+                    if not decision.quantity and ("QUANTITY" in line_upper or "SHARES" in line_upper):
+                        try:
+                            numbers = [int(s) for s in line.split() if s.isdigit()]
+                            if numbers:
+                                decision.quantity = numbers[0]
+                        except ValueError:
+                            pass
+
+                    # Parse stop-loss if not found yet - look for value AFTER "STOP"
+                    if not decision.stop_loss and "STOP" in line_upper and "LOSS" in line_upper:
+                        try:
+                            # Find position of STOP_LOSS or STOP LOSS and extract number after it
+                            cleaned = line.replace("$", "").replace(",", "")
+                            match = re.search(r'STOP[_\s]*LOSS[:\s]*([\d.]+)', cleaned, re.IGNORECASE)
+                            if match:
+                                decision.stop_loss = float(match.group(1))
+                        except (ValueError, AttributeError, TypeError):
+                            pass
+
+                    # Parse take-profit if not found yet
+                    if not decision.take_profit and "TAKE" in line_upper and "PROFIT" in line_upper:
+                        try:
+                            cleaned = line.replace("$", "").replace(",", "")
+                            match = re.search(r'TAKE[_\s]*PROFIT[:\s]*([\d.]+)', cleaned, re.IGNORECASE)
+                            if match:
+                                decision.take_profit = float(match.group(1))
+                        except (ValueError, AttributeError, TypeError):
+                            pass
 
         # Log the parsed decision
         logger.info(
