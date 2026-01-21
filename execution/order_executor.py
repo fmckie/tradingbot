@@ -1,4 +1,5 @@
 """Order execution handling for Alpaca trading."""
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -16,6 +17,8 @@ from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, QueryOrderS
 from agents.base_agent import TradingDecision, ActionType
 from risk.risk_manager import RiskManager, RiskValidationResult
 from config.settings import SYMBOLS
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -215,7 +218,25 @@ class OrderExecutor:
                     risk_validation=risk_result,
                 )
 
-            # Close the position
+            # Cancel any pending orders for this symbol first
+            # This releases shares held by bracket orders (stop-loss/take-profit)
+            try:
+                open_orders = self.client.get_orders(
+                    GetOrdersRequest(
+                        status=QueryOrderStatus.OPEN,
+                        symbols=[decision.symbol]
+                    )
+                )
+                for order in open_orders:
+                    try:
+                        self.client.cancel_order_by_id(order.id)
+                        logger.info(f"[{self.agent_name}] Cancelled pending order {order.id} for {decision.symbol}")
+                    except Exception as cancel_err:
+                        logger.warning(f"[{self.agent_name}] Failed to cancel order {order.id}: {cancel_err}")
+            except Exception as e:
+                logger.warning(f"[{self.agent_name}] Error fetching open orders: {e}")
+
+            # Close the position (shares should now be free)
             order = self.client.close_position(decision.symbol)
 
             # Extract order ID if available
