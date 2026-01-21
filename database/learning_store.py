@@ -484,6 +484,86 @@ class LearningStore:
             )
         return None
 
+    # ==================== Position Context Methods ====================
+
+    @staticmethod
+    async def get_position_entry_details(
+        agent_name: str,
+        symbol: str
+    ) -> Optional[dict]:
+        """
+        Get the entry details (stop/TP) for a current open position.
+        Looks up the most recent BUY decision for this symbol.
+        """
+        query = """
+            SELECT decision_made FROM episodes
+            WHERE agent_name = $1
+              AND decision_made->>'symbol' = $2
+              AND decision_made->>'action' = 'buy'
+              AND outcome_status = 'pending'
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """
+        row = await PostgresClient.fetchrow(query, agent_name, symbol)
+        if row and row["decision_made"]:
+            decision = json.loads(row["decision_made"]) if isinstance(row["decision_made"], str) else row["decision_made"]
+            return {
+                "stop_loss": decision.get("stop_loss"),
+                "take_profit": decision.get("take_profit"),
+                "strategy": decision.get("strategy"),
+                "confidence": decision.get("confidence"),
+            }
+        return None
+
+    @staticmethod
+    async def get_symbol_trade_history(
+        agent_name: str,
+        symbol: str,
+        limit: int = 50
+    ) -> dict:
+        """
+        Get trading history and statistics for a specific symbol.
+        Returns: total_trades, wins, losses, win_rate, avg_pnl
+        """
+        query = """
+            SELECT
+                COUNT(*) as total_trades,
+                COUNT(CASE WHEN outcome_status = 'win' THEN 1 END) as wins,
+                COUNT(CASE WHEN outcome_status = 'loss' THEN 1 END) as losses,
+                AVG(CASE WHEN outcome_pnl IS NOT NULL THEN outcome_pnl ELSE 0 END) as avg_pnl,
+                MAX(outcome_pnl) as best_trade,
+                MIN(outcome_pnl) as worst_trade
+            FROM episodes
+            WHERE agent_name = $1
+              AND decision_made->>'symbol' = $2
+              AND decision_made->>'action' != 'hold'
+              AND outcome_status IN ('win', 'loss', 'breakeven')
+            LIMIT $3
+        """
+        row = await PostgresClient.fetchrow(query, agent_name, symbol, limit)
+        if row:
+            total = int(row["total_trades"] or 0)
+            wins = int(row["wins"] or 0)
+            losses = int(row["losses"] or 0)
+            return {
+                "total_trades": total,
+                "wins": wins,
+                "losses": losses,
+                "win_rate": (wins / total * 100) if total > 0 else 0.0,
+                "avg_pnl": float(row["avg_pnl"] or 0),
+                "best_trade": float(row["best_trade"]) if row["best_trade"] else None,
+                "worst_trade": float(row["worst_trade"]) if row["worst_trade"] else None,
+            }
+        return {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0.0,
+            "avg_pnl": 0.0,
+            "best_trade": None,
+            "worst_trade": None,
+        }
+
     # ==================== Competition Scores ====================
 
     @staticmethod

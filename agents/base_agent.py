@@ -39,6 +39,9 @@ class MarketContext:
     positions: list[dict]  # Current open positions
     recent_trades: list[dict]  # Recent trade history
     market_condition: str  # Overall market assessment
+    # News data (optional - defaults to empty)
+    news: dict[str, list[dict]] = field(default_factory=dict)  # News articles per symbol
+    news_sentiment: dict[str, dict] = field(default_factory=dict)  # Sentiment summary per symbol
 
 
 @dataclass
@@ -155,6 +158,11 @@ class BaseTradingAgent(ABC):
             "get_support_resistance",
             "analyze_trend",
         ]
+        news_tools = [
+            "get_recent_news",
+            "get_news_sentiment",
+            "search_news",
+        ]
 
         if tool_name in market_tools:
             return "market"
@@ -162,6 +170,8 @@ class BaseTradingAgent(ABC):
             return "trading"
         elif tool_name in analysis_tools:
             return "analysis"
+        elif tool_name in news_tools:
+            return "news"
 
         return None
 

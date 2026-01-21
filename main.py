@@ -32,9 +32,11 @@ from config.settings import (
 )
 from data.market_data import MarketDataProvider
 from data.indicators import TechnicalIndicators
+from data.news import NewsProvider
 from tools.market_tools import MarketTools
 from tools.trading_tools import TradingTools
 from tools.analysis_tools import AnalysisTools
+from tools.news_tools import NewsTools
 from agents.claude_agent import ClaudeAgent
 from agents.grok_agent import GrokAgent
 from agents.base_agent import MarketContext, TradingDecision, ActionType
@@ -92,6 +94,9 @@ class TradingCompetition:
         self.claude_indicators = TechnicalIndicators(self.claude_market_data)
         self.grok_indicators = TechnicalIndicators(self.grok_market_data)
 
+        # News provider (shared - same news for both agents)
+        self.news_provider = NewsProvider()
+
         # Initialize tools for each agent
         self.claude_tools = self._create_tools(
             self.claude_market_data, self.claude_indicators, self.claude_trading, "claude"
@@ -139,7 +144,57 @@ class TradingCompetition:
             "market": MarketTools(market_data, indicators),
             "trading": TradingTools(trading_client, agent_name),
             "analysis": AnalysisTools(market_data, indicators),
+            "news": NewsTools(self.news_provider),
         }
+
+    def _find_position_entry_time(
+        self, trading_client, symbol: str
+    ) -> Optional[datetime]:
+        """Find the entry time for a position by looking at recent orders."""
+        try:
+            orders = trading_client.get_orders(
+                GetOrdersRequest(
+                    status=QueryOrderStatus.CLOSED,
+                    symbols=[symbol],
+                    limit=20
+                )
+            )
+            # Find the most recent BUY order that opened the position
+            for o in orders:
+                if isinstance(o, Order) and o.side and o.side.value == "buy" and o.filled_at:
+                    return o.filled_at
+        except Exception:
+            pass
+        return None
+
+    def _calculate_holding_duration(
+        self, entry_time: Optional[datetime]
+    ) -> tuple[float, str]:
+        """Calculate holding duration in hours and formatted string."""
+        if not entry_time:
+            return 0.0, "Unknown"
+
+        now = datetime.now(ET)
+        # Make entry_time timezone-aware if it isn't
+        if entry_time.tzinfo is None:
+            entry_time = ET.localize(entry_time)
+        else:
+            entry_time = entry_time.astimezone(ET)
+
+        delta = now - entry_time
+        total_hours = delta.total_seconds() / 3600
+
+        if total_hours < 1:
+            minutes = int(delta.total_seconds() / 60)
+            return total_hours, f"{minutes}m"
+        elif total_hours < 24:
+            hours = int(total_hours)
+            minutes = int((total_hours - hours) * 60)
+            return total_hours, f"{hours}h {minutes}m"
+        else:
+            days = int(total_hours / 24)
+            hours = int(total_hours % 24)
+            return total_hours, f"{days}d {hours}h"
 
     def is_market_open(self) -> bool:
         """Check if market is currently open."""
@@ -245,21 +300,81 @@ class TradingCompetition:
             console.print(f"[red]Error getting account for {agent_name}: {e}[/red]")
             account_data = {"equity": STARTING_CAPITAL, "cash": STARTING_CAPITAL, "error": str(e)}
 
-        # Get positions
+        # Get positions with enriched data
         positions_data: list[dict[str, Any]] = []
+        equity = account_data.get("equity", STARTING_CAPITAL)
         try:
             positions = trading_client.get_all_positions()
             for p in positions:
                 if isinstance(p, Position) and p.symbol in SYMBOLS:
-                    positions_data.append({
+                    # Basic position data
+                    avg_entry = float(p.avg_entry_price or 0)
+                    current = float(p.current_price or 0)
+                    market_val = float(p.market_value or 0)
+
+                    position_dict: dict[str, Any] = {
                         "symbol": p.symbol,
                         "quantity": int(p.qty or 0),
-                        "avg_entry_price": float(p.avg_entry_price or 0),
-                        "current_price": float(p.current_price or 0),
-                        "market_value": float(p.market_value or 0),
+                        "avg_entry_price": avg_entry,
+                        "current_price": current,
+                        "market_value": market_val,
                         "unrealized_pnl": float(p.unrealized_pl or 0),
                         "unrealized_pnl_percent": float(p.unrealized_plpc or 0) * 100,
-                    })
+                        # Phase 1: Alpaca intraday fields
+                        "intraday_pnl": float(p.unrealized_intraday_pl or 0),
+                        "intraday_pnl_percent": float(p.unrealized_intraday_plpc or 0) * 100,
+                        "change_today_percent": float(p.change_today or 0) * 100,
+                    }
+
+                    # Phase 2: Time context
+                    entry_time = self._find_position_entry_time(trading_client, p.symbol)
+                    holding_hours, holding_str = self._calculate_holding_duration(entry_time)
+                    position_dict["entry_time"] = entry_time.isoformat() if entry_time else None
+                    position_dict["entry_time_str"] = entry_time.strftime("%H:%M ET") if entry_time else "Unknown"
+                    position_dict["holding_hours"] = holding_hours
+                    position_dict["holding_duration"] = holding_str
+
+                    # Phase 3: Risk context - exposure percentage
+                    position_dict["exposure_percent"] = (market_val / equity * 100) if equity > 0 else 0.0
+
+                    # Phase 3 & 4: Get stop/TP and symbol history from learning system
+                    if LEARNING_AVAILABLE:
+                        try:
+                            # Get stop/TP from stored episode
+                            entry_details = await LearningStore.get_position_entry_details(
+                                agent_name, p.symbol
+                            )
+                            if entry_details:
+                                stop_loss = entry_details.get("stop_loss")
+                                take_profit = entry_details.get("take_profit")
+                                position_dict["stop_loss"] = stop_loss
+                                position_dict["take_profit"] = take_profit
+                                position_dict["entry_strategy"] = entry_details.get("strategy")
+                                position_dict["entry_confidence"] = entry_details.get("confidence")
+
+                                # Calculate distance to stop/TP as percentage
+                                if stop_loss and current > 0:
+                                    position_dict["stop_distance_pct"] = (
+                                        (current - stop_loss) / current * 100
+                                    )
+                                if take_profit and current > 0:
+                                    position_dict["tp_distance_pct"] = (
+                                        (take_profit - current) / current * 100
+                                    )
+
+                            # Get symbol trading history
+                            symbol_history = await LearningStore.get_symbol_trade_history(
+                                agent_name, p.symbol
+                            )
+                            position_dict["symbol_total_trades"] = symbol_history["total_trades"]
+                            position_dict["symbol_wins"] = symbol_history["wins"]
+                            position_dict["symbol_losses"] = symbol_history["losses"]
+                            position_dict["symbol_win_rate"] = symbol_history["win_rate"]
+                            position_dict["symbol_avg_pnl"] = symbol_history["avg_pnl"]
+                        except Exception as e:
+                            console.print(f"[yellow]Warning: Failed to get position details: {e}[/yellow]")
+
+                    positions_data.append(position_dict)
         except Exception as e:
             console.print(f"[red]Error getting positions for {agent_name}: {e}[/red]")
             positions_data = []
@@ -292,6 +407,18 @@ class TradingCompetition:
         else:
             market_condition = "mixed - stocks showing different trends"
 
+        # Fetch news data
+        news_data: dict[str, list[dict]] = {}
+        news_sentiment: dict[str, dict] = {}
+        try:
+            for symbol in SYMBOLS:
+                articles = self.news_provider.get_news_for_symbol(symbol, hours_back=24, limit=5)
+                news_data[symbol] = [a.to_dict() for a in articles]
+                sentiment = self.news_provider.get_sentiment_summary(symbol, hours_back=24)
+                news_sentiment[symbol] = sentiment.to_dict()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to fetch news: {e}[/yellow]")
+
         return MarketContext(
             timestamp=datetime.now(ET),
             symbols=symbols_data,
@@ -299,6 +426,8 @@ class TradingCompetition:
             positions=positions_data,
             recent_trades=recent_trades,
             market_condition=market_condition,
+            news=news_data,
+            news_sentiment=news_sentiment,
         )
 
     async def run_agent_decision(

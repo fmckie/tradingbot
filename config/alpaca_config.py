@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.historical.news import NewsClient
 from alpaca.data.live import StockDataStream
 
 load_dotenv()
@@ -39,3 +40,8 @@ def get_grok_client() -> tuple[TradingClient, StockHistoricalDataClient]:
 def get_data_stream(api_key: str, secret_key: str) -> StockDataStream:
     """Get real-time data stream client."""
     return StockDataStream(api_key, secret_key)
+
+
+def get_news_client() -> NewsClient:
+    """Get Alpaca news client (no API keys required)."""
+    return NewsClient()

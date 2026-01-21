@@ -21,6 +21,7 @@ from .base_agent import (
 from tools.market_tools import MARKET_TOOLS_SCHEMA
 from tools.trading_tools import TRADING_TOOLS_SCHEMA
 from tools.analysis_tools import ANALYSIS_TOOLS_SCHEMA
+from tools.news_tools import NEWS_TOOLS_SCHEMA
 from config.settings import LEARNING_ENABLED
 
 
@@ -32,9 +33,20 @@ YOUR GOAL: Maximize risk-adjusted returns over a 1-month competition period.
 WHAT YOU RECEIVE EACH HOUR:
 - Real-time price data for GOOGL and TSLA
 - Technical indicators (VWAP, RSI, MACD, Bollinger Bands, ATR, moving averages)
+- NEWS SENTIMENT: Recent headlines and sentiment analysis for each stock
 - Your current positions and unrealized P&L
 - Your account balance and buying power
 - Recent trade history
+
+NEWS ANALYSIS:
+You have access to news tools that provide sentiment-scored headlines. News sentiment can be:
+- Bullish: Positive news (upgrades, beat earnings, partnerships, etc.)
+- Bearish: Negative news (downgrades, misses, lawsuits, recalls, etc.)
+- Neutral: No clear sentiment signal
+
+Use news sentiment as a CONFIRMATION or CAUTION signal alongside technical analysis.
+Strong technical setups with confirming news sentiment are higher-probability trades.
+Be cautious when news sentiment contradicts your technical analysis.
 
 WHAT YOU MUST DECIDE:
 1. Your trading STRATEGY for this hour:
@@ -102,7 +114,7 @@ class GrokAgent(BaseTradingAgent):
 
         # Combine all tool schemas for OpenAI-compatible format
         self.tool_schemas = self._convert_tools_to_openai_format(
-            MARKET_TOOLS_SCHEMA + TRADING_TOOLS_SCHEMA + ANALYSIS_TOOLS_SCHEMA
+            MARKET_TOOLS_SCHEMA + TRADING_TOOLS_SCHEMA + ANALYSIS_TOOLS_SCHEMA + NEWS_TOOLS_SCHEMA
         )
 
     def _convert_tools_to_openai_format(self, anthropic_tools: list) -> list:
@@ -261,12 +273,53 @@ class GrokAgent(BaseTradingAgent):
 
     def _format_context(self, context: MarketContext) -> str:
         """Format market context as a clear message for Grok."""
-        # Format positions
-        positions_str = "None" if not context.positions else "\n".join(
-            f"  - {p['symbol']}: {p['quantity']} shares @ ${p['avg_entry_price']:.2f}, "
-            f"P&L: ${p['unrealized_pnl']:.2f} ({p['unrealized_pnl_percent']:.1f}%)"
-            for p in context.positions
-        )
+        # Format positions with enriched data
+        positions_str = "None"
+        if context.positions:
+            position_lines = []
+            for p in context.positions:
+                lines = [
+                    f"  {p['symbol']}: {p['quantity']} shares @ ${p['avg_entry_price']:.2f}"
+                ]
+
+                # P&L line (total + today)
+                pnl_line = f"    P&L: ${p['unrealized_pnl']:+.2f} ({p['unrealized_pnl_percent']:+.1f}%)"
+                if p.get('intraday_pnl') is not None:
+                    pnl_line += f" | Today: ${p['intraday_pnl']:+.2f} ({p.get('intraday_pnl_percent', 0):+.1f}%)"
+                lines.append(pnl_line)
+
+                # Time context
+                if p.get('holding_duration'):
+                    time_str = f"    Holding: {p['holding_duration']}"
+                    if p.get('entry_time_str') and p['entry_time_str'] != 'Unknown':
+                        time_str += f" since {p['entry_time_str']}"
+                    lines.append(time_str)
+
+                # Stop/TP with distance
+                risk_parts = []
+                if p.get('stop_loss'):
+                    stop_dist = p.get('stop_distance_pct', 0)
+                    risk_parts.append(f"Stop: ${p['stop_loss']:.2f} ({stop_dist:+.1f}% away)")
+                if p.get('take_profit'):
+                    tp_dist = p.get('tp_distance_pct', 0)
+                    risk_parts.append(f"TP: ${p['take_profit']:.2f} ({tp_dist:+.1f}% away)")
+                if risk_parts:
+                    lines.append(f"    {' | '.join(risk_parts)}")
+
+                # Risk exposure
+                if p.get('exposure_percent'):
+                    lines.append(f"    Risk: {p['exposure_percent']:.1f}% of equity")
+
+                # Symbol history
+                if p.get('symbol_total_trades', 0) > 0:
+                    lines.append(
+                        f"    Symbol history: {p['symbol_total_trades']} trades, "
+                        f"{p.get('symbol_win_rate', 0):.0f}% win rate"
+                    )
+
+                position_lines.append("\n".join(lines))
+
+            positions_str = "\n".join(position_lines)
 
         # Format recent trades
         trades_str = "None" if not context.recent_trades else "\n".join(
@@ -306,6 +359,9 @@ RECENT TRADES:
 MARKET DATA:
 {symbols_str}
 
+NEWS SENTIMENT:
+{self._format_news(context)}
+
 MARKET CONDITION: {context.market_condition}
 
 ---
@@ -321,6 +377,33 @@ After your analysis, clearly state:
 
 Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
 """
+
+    def _format_news(self, context: MarketContext) -> str:
+        """Format news sentiment data for the context."""
+        if not context.news_sentiment:
+            return "No news data available"
+
+        lines = []
+        for symbol in context.symbols.keys():
+            sentiment = context.news_sentiment.get(symbol, {})
+            if not sentiment:
+                lines.append(f"  {symbol}: No recent news")
+                continue
+
+            label = sentiment.get("sentiment_label", "neutral").upper()
+            score = sentiment.get("avg_sentiment", 0)
+            count = sentiment.get("article_count", 0)
+            latest = sentiment.get("latest_headline", "")
+
+            score_str = f" ({score:+.2f})" if score != 0 else ""
+            lines.append(f"  {symbol}: {label}{score_str} ({count} articles)")
+
+            # Add latest headline if available
+            if latest and latest != "No recent news":
+                headline_short = latest[:60] + "..." if len(latest) > 60 else latest
+                lines.append(f"    Latest: \"{headline_short}\"")
+
+        return "\n".join(lines) if lines else "No news data available"
 
     def _parse_decision(
         self, message: dict, timestamp: datetime, tool_calls: list
