@@ -227,14 +227,15 @@ class OrderExecutor:
                         symbols=[decision.symbol]
                     )
                 )
+                print(f"[{self.agent_name}] Found {len(open_orders)} open orders for {decision.symbol}")
                 for order in open_orders:
                     try:
                         self.client.cancel_order_by_id(order.id)
-                        logger.info(f"[{self.agent_name}] Cancelled pending order {order.id} for {decision.symbol}")
+                        print(f"[{self.agent_name}] Cancelled pending order {order.id} for {decision.symbol}")
                     except Exception as cancel_err:
-                        logger.warning(f"[{self.agent_name}] Failed to cancel order {order.id}: {cancel_err}")
+                        print(f"[{self.agent_name}] Failed to cancel order {order.id}: {cancel_err}")
             except Exception as e:
-                logger.warning(f"[{self.agent_name}] Error fetching open orders: {e}")
+                print(f"[{self.agent_name}] Error fetching open orders: {e}")
 
             # Close the position (shares should now be free)
             order = self.client.close_position(decision.symbol)
