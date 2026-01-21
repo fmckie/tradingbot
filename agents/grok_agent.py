@@ -1,4 +1,6 @@
 """Grok AI trading agent using xAI API."""
+import asyncio
+import logging
 import os
 import json
 from datetime import datetime
@@ -6,6 +8,8 @@ from typing import Any
 import httpx
 
 from database.json_utils import safe_json_dumps
+
+logger = logging.getLogger(__name__)
 
 from .base_agent import (
     BaseTradingAgent,
@@ -76,12 +80,25 @@ Always explain your reasoning clearly. Your decisions and explanations will be l
 class GrokAgent(BaseTradingAgent):
     """Trading agent powered by Grok (xAI)."""
 
+    # Retry configuration
+    MAX_RETRIES = 3
+    BASE_RETRY_DELAY = 2.0  # seconds
+    REQUEST_TIMEOUT = 60.0  # seconds
+
     def __init__(self, tools: dict):
         super().__init__("grok", tools)
         self.api_key = os.getenv("XAI_API_KEY")
         self.base_url = "https://api.x.ai/v1"
         self.model = "grok-4"  # Grok 4
         self.current_strategy_explanation = ""
+
+        # Validate API key at startup
+        if not self.api_key:
+            raise ValueError("XAI_API_KEY environment variable not set")
+        if not self.api_key.startswith("xai-"):
+            logger.warning("XAI_API_KEY may be invalid - expected 'xai-' prefix")
+
+        logger.info(f"GrokAgent initialized with model: {self.model}")
 
         # Combine all tool schemas for OpenAI-compatible format
         self.tool_schemas = self._convert_tools_to_openai_format(
@@ -133,32 +150,72 @@ class GrokAgent(BaseTradingAgent):
         max_iterations = 5
 
         async with httpx.AsyncClient() as client:
-            for _ in range(max_iterations):
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "tools": self.tool_schemas,
-                        "tool_choice": "auto",
-                        "max_tokens": 4096,
-                    },
-                    timeout=60.0,
-                )
+            for iteration in range(max_iterations):
+                # Retry logic with exponential backoff
+                response = None
+                last_error = None
 
-                if response.status_code != 200:
-                    # Handle error - return defensive HOLD
-                    error_msg = f"API error: {response.status_code} - {response.text[:200]}"
-                    print(f"Warning: Grok {error_msg}")
+                for attempt in range(self.MAX_RETRIES):
+                    try:
+                        logger.debug(f"API call attempt {attempt + 1}/{self.MAX_RETRIES}")
+                        response = await client.post(
+                            f"{self.base_url}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json={
+                                "model": self.model,
+                                "messages": messages,
+                                "tools": self.tool_schemas,
+                                "tool_choice": "auto",
+                                "max_tokens": 4096,
+                            },
+                            timeout=self.REQUEST_TIMEOUT,
+                        )
+
+                        if response.status_code == 200:
+                            break  # Success
+                        elif response.status_code == 429:
+                            # Rate limited - wait and retry
+                            wait_time = self.BASE_RETRY_DELAY * (2 ** attempt)
+                            logger.warning(f"Rate limited (429), retrying in {wait_time}s")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        elif response.status_code >= 500:
+                            # Server error - retry
+                            wait_time = self.BASE_RETRY_DELAY * (2 ** attempt)
+                            logger.warning(f"Server error ({response.status_code}), retrying in {wait_time}s")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            # Client error - don't retry
+                            break
+
+                    except httpx.TimeoutException:
+                        last_error = "Request timed out"
+                        logger.warning(f"Timeout on attempt {attempt + 1}/{self.MAX_RETRIES}")
+                        if attempt < self.MAX_RETRIES - 1:
+                            await asyncio.sleep(self.BASE_RETRY_DELAY * (2 ** attempt))
+                        continue
+                    except httpx.ConnectError as e:
+                        last_error = f"Connection failed: {e}"
+                        logger.warning(f"Connection error on attempt {attempt + 1}: {e}")
+                        if attempt < self.MAX_RETRIES - 1:
+                            await asyncio.sleep(self.BASE_RETRY_DELAY * (2 ** attempt))
+                        continue
+
+                # Check if we got a successful response
+                if response is None or response.status_code != 200:
+                    error_msg = last_error if last_error else f"API error: {response.status_code if response else 'no response'}"
+                    if response:
+                        error_msg += f" - {response.text[:500]}"
+                    logger.error(f"Grok API failed after {self.MAX_RETRIES} attempts: {error_msg}")
                     return TradingDecision(
                         timestamp=context.timestamp,
                         action=ActionType.HOLD,
                         strategy_used=StrategyType.DEFENSIVE,
-                        reasoning=error_msg,
+                        reasoning=f"API error (falling back to HOLD): {error_msg}",
                         tool_calls=tool_calls_made,
                     )
 
@@ -176,6 +233,8 @@ class GrokAgent(BaseTradingAgent):
                         tool_input = json.loads(tool_call["function"]["arguments"])
                         tool_id = tool_call["id"]
 
+                        logger.info(f"Grok calling tool: {tool_name} with {tool_input}")
+
                         # Execute the tool
                         result = self.execute_tool(tool_name, tool_input)
                         tool_calls_made.append(
@@ -191,6 +250,7 @@ class GrokAgent(BaseTradingAgent):
                         )
                 else:
                     # Grok has finished reasoning
+                    logger.info(f"Grok completed analysis after {iteration + 1} iteration(s)")
                     break
 
         # Parse Grok's final response into a TradingDecision
@@ -281,7 +341,7 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
         )
 
         if not text_content:
-            print(f"Warning: Grok returned empty content, defaulting to HOLD")
+            logger.warning("Grok returned empty content, defaulting to HOLD")
             decision.reasoning = "API returned empty response - defaulting to defensive HOLD"
             return decision
 
@@ -355,6 +415,14 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
                                 continue
                     except ValueError:
                         pass
+
+        # Log the parsed decision
+        logger.info(
+            f"Grok decision: {decision.action.value} "
+            f"strategy={decision.strategy_used.value} "
+            f"symbol={decision.symbol or 'N/A'} "
+            f"qty={decision.quantity or 'N/A'}"
+        )
 
         return decision
 
@@ -466,7 +534,7 @@ Be specific and actionable in your reflections."""
                     }
 
         except Exception as e:
-            print(f"Error generating reflection: {e}")
+            logger.error(f"Error generating reflection: {e}")
             return {
                 "what_worked": "",
                 "what_failed": "",

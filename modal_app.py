@@ -125,10 +125,18 @@ def run_hourly_cycle():
 
 
 @app.local_entrypoint()
-def main():
-    """Local entrypoint for manual testing."""
-    print("Running trading cycle manually...")
-    result = run_hourly_cycle.remote()
+def main(dry: bool = False):
+    """Local entrypoint for manual testing.
+
+    Args:
+        dry: If True, run dry test (bypasses market hours). Otherwise run hourly cycle.
+    """
+    if dry:
+        print("Running DRY RUN on Modal (logs will appear in dashboard)...")
+        result = run_dry.remote()
+    else:
+        print("Running trading cycle on Modal (logs will appear in dashboard)...")
+        result = run_hourly_cycle.remote()
     print(f"Result: {result}")
 
 
