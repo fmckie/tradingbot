@@ -91,7 +91,7 @@ class ClaudeAgent(BaseTradingAgent):
     def __init__(self, tools: dict):
         super().__init__("claude", tools)
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.model = "claude-opus-4-5-20251101"  # Claude Opus 4.5
+        self.model = "claude-sonnet-4-6"  # Claude Sonnet 4.6
         self.current_strategy_explanation = ""
 
         # Combine all tool schemas

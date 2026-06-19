@@ -101,7 +101,7 @@ class GrokAgent(BaseTradingAgent):
         super().__init__("grok", tools)
         self.api_key = os.getenv("XAI_API_KEY")
         self.base_url = "https://api.x.ai/v1"
-        self.model = "grok-4"  # Grok 4
+        self.model = "grok-4.3"  # Grok 4.3
         self.current_strategy_explanation = ""
 
         # Validate API key at startup
@@ -459,59 +459,44 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
             elif "TSLA" in text_upper:
                 decision.symbol = "TSLA"
 
-            # Try to parse numbers using regex for more precise extraction
+            # Parse numbers with regex. Grok formats these many ways, e.g.:
+            #   "QUANTITY: 150", "QUANTITY: 15 shares", "Shares: 20"
+            #   "STOP LOSS: $175", "STOP_LOSS: 175", "Stop-Loss: $175",
+            #   "set stop loss at $175", "$1,175.00" (thousands separator)
             import re
 
-            # Look for patterns like "QUANTITY: 150" or "QUANTITY: 150,"
-            qty_match = re.search(r'QUANTITY[:\s]+(\d+)', text_content, re.IGNORECASE)
+            qty_match = re.search(
+                r'(?:QUANTITY|SHARES)[:\s]+(\d+)', text_content, re.IGNORECASE
+            )
             if qty_match:
                 decision.quantity = int(qty_match.group(1))
 
-            # Look for patterns like "STOP_LOSS: 329.69" or "STOP LOSS: $329.69"
-            stop_match = re.search(r'STOP[_\s]*LOSS[:\s]+[$]?([\d.]+)', text_content, re.IGNORECASE)
-            if stop_match:
-                decision.stop_loss = float(stop_match.group(1))
+            def _extract_price(label_regex: str) -> float | None:
+                """Extract a dollar price following a label, or None.
 
-            # Look for patterns like "TAKE_PROFIT: 335.75" or "TAKE PROFIT: $335.75"
-            tp_match = re.search(r'TAKE[_\s]*PROFIT[:\s]+[$]?([\d.]+)', text_content, re.IGNORECASE)
-            if tp_match:
-                decision.take_profit = float(tp_match.group(1))
+                Tolerates space/underscore/hyphen inside the label, an optional
+                "at" connector and "$" sign, and thousands separators. Values
+                below $10 are treated as parse noise and rejected (the traded
+                universe sits well above $10), which guards against grabbing a
+                stray fragment as a price.
+                """
+                match = re.search(
+                    label_regex + r'[:\s]*(?:at\s+)?\$?\s*([\d,]+(?:\.\d+)?)',
+                    text_content,
+                    re.IGNORECASE,
+                )
+                if not match:
+                    return None
+                value = float(match.group(1).replace(",", ""))
+                return value if value >= 10 else None
 
-            # Fallback: try line-by-line parsing if regex didn't find values
-            if not decision.quantity or not decision.stop_loss:
-                lines = text_content.split("\n")
-                for line in lines:
-                    line_upper = line.upper()
+            stop_loss = _extract_price(r'STOP[\s_-]*LOSS')
+            if stop_loss is not None:
+                decision.stop_loss = stop_loss
 
-                    # Parse quantity if not found yet
-                    if not decision.quantity and ("QUANTITY" in line_upper or "SHARES" in line_upper):
-                        try:
-                            numbers = [int(s) for s in line.split() if s.isdigit()]
-                            if numbers:
-                                decision.quantity = numbers[0]
-                        except ValueError:
-                            pass
-
-                    # Parse stop-loss if not found yet - look for value AFTER "STOP"
-                    if not decision.stop_loss and "STOP" in line_upper and "LOSS" in line_upper:
-                        try:
-                            # Find position of STOP_LOSS or STOP LOSS and extract number after it
-                            cleaned = line.replace("$", "").replace(",", "")
-                            match = re.search(r'STOP[_\s]*LOSS[:\s]*([\d.]+)', cleaned, re.IGNORECASE)
-                            if match:
-                                decision.stop_loss = float(match.group(1))
-                        except (ValueError, AttributeError, TypeError):
-                            pass
-
-                    # Parse take-profit if not found yet
-                    if not decision.take_profit and "TAKE" in line_upper and "PROFIT" in line_upper:
-                        try:
-                            cleaned = line.replace("$", "").replace(",", "")
-                            match = re.search(r'TAKE[_\s]*PROFIT[:\s]*([\d.]+)', cleaned, re.IGNORECASE)
-                            if match:
-                                decision.take_profit = float(match.group(1))
-                        except (ValueError, AttributeError, TypeError):
-                            pass
+            take_profit = _extract_price(r'TAKE[\s_-]*PROFIT')
+            if take_profit is not None:
+                decision.take_profit = take_profit
 
         # Log the parsed decision
         logger.info(

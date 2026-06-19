@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Trading Competition: Claude Opus 4.5 vs Grok
+AI Trading Competition: Claude Sonnet 4.6 vs Grok 4.3
 
 This is the main competition runner that orchestrates hourly trading decisions
 from both AI agents on GOOGL and TSLA.
@@ -956,7 +956,7 @@ class TradingCompetition:
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="AI Trading Competition: Claude Opus 4.5 vs Grok"
+        description="AI Trading Competition: Claude Sonnet 4.6 vs Grok 4.3"
     )
     parser.add_argument(
         "--single-cycle",
@@ -991,7 +991,7 @@ async def main():
         console.print("Please copy .env.template to .env and fill in your credentials.")
         sys.exit(1)
 
-    competition = TradingCompetition()
+    competition = TradingCompetition(skip_market_check=args.skip_market_check)
 
     try:
         if args.single_cycle:

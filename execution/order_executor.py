@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 from alpaca.trading.client import TradingClient
-from alpaca.trading.models import Order, Position
 from alpaca.trading.requests import (
     MarketOrderRequest,
     LimitOrderRequest,
@@ -273,11 +272,10 @@ class OrderExecutor:
 
         result: list[dict[str, Any]] = []
         for o in orders:
-            # Type guard: skip if not an Order object (API may return str on error)
-            if not isinstance(o, Order):
-                continue
-            # Check for required attributes
-            if not hasattr(o, 'symbol') or not hasattr(o, 'id'):
+            # Duck-typing guard: the SDK may return a non-order value (e.g. a str)
+            # on error. Skip anything that isn't order-shaped instead of an
+            # isinstance(Order) check, which also rejects valid duck-typed objects.
+            if not (hasattr(o, "symbol") and hasattr(o, "id")):
                 continue
             if o.symbol not in SYMBOLS:
                 continue

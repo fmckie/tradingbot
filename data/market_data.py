@@ -10,7 +10,6 @@ from alpaca.data.requests import (
     StockTradesRequest,
     StockSnapshotRequest,
 )
-from alpaca.data.models import BarSet
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.enums import DataFeed
 
@@ -128,8 +127,11 @@ class MarketDataProvider:
         )
 
         bars = self.client.get_stock_bars(request)
-        # Access the DataFrame from the response (BarSet has .df property)
-        if not isinstance(bars, BarSet):
+        # Access the DataFrame from the response. The SDK returns a BarSet (which
+        # exposes .df) on success, but may return a non-BarSet value (e.g. a str)
+        # on error. Duck-type on .df rather than isinstance(BarSet) so the parser
+        # is exercised under test and any error shape degrades to an empty frame.
+        if not hasattr(bars, "df"):
             return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
         df = bars.df
 
