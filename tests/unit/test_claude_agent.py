@@ -666,8 +666,9 @@ class TestClaudeAgentParseDecision:
         LOSS: $175.00
         """)
         decision = agent._parse_decision(response, timestamp, [])
-        # Current implementation requires both STOP and LOSS on same line
-        assert decision.stop_loss is None
+        # The parser is now regex-based and consistent with the Grok agent:
+        # whitespace (including a line break) between STOP and LOSS is tolerated.
+        assert decision.stop_loss == 175.00
 
     def test_parse_quantity_with_comma_separator(self, agent, timestamp):
         """Test parsing quantity like '1,000 shares'."""

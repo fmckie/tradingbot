@@ -41,6 +41,7 @@ env/
 # Logs and databases
 *.log
 *.sqlite
+*.sqlite.bak-*
 *.db
 logs/
 

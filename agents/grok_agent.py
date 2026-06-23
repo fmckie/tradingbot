@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import re
 import json
 from datetime import datetime
 from typing import Any
@@ -19,7 +20,7 @@ from .base_agent import (
     StrategyType,
 )
 from tools.market_tools import MARKET_TOOLS_SCHEMA
-from tools.trading_tools import TRADING_TOOLS_SCHEMA
+from tools.trading_tools import READ_ONLY_TRADING_TOOLS_SCHEMA
 from tools.analysis_tools import ANALYSIS_TOOLS_SCHEMA
 from tools.news_tools import NEWS_TOOLS_SCHEMA
 from config.settings import LEARNING_ENABLED
@@ -80,8 +81,27 @@ DECISION FRAMEWORK:
 2. Identify which strategy fits current conditions
 3. Determine if there's a high-probability setup
 4. If yes, calculate position size within risk limits
-5. Place order with stop-loss
+5. Emit the structured ACTION block (below) to request the trade
 6. If no clear setup, HOLD (being flat is a valid position)
+
+HOW ORDERS ARE EXECUTED (IMPORTANT):
+You CANNOT place, close, or cancel orders yourself. You have no order-execution
+tools. To trade, you MUST end your response with a strict decision block, one
+field per line, exactly:
+
+ACTION: BUY
+SYMBOL: TSLA
+QUANTITY: 120
+STOP_LOSS: 393.00
+TAKE_PROFIT: 418.00   (optional)
+
+Use ACTION: SELL or ACTION: CLOSE the same way (SYMBOL required; QUANTITY for
+SELL). To stay flat, end with exactly: ACTION: HOLD
+
+The system parses that block and routes the trade through the hard risk layer,
+which sizes it, attaches the protective stop on the broker, and logs it. If you
+omit the block (or write prose like "order placed"), NO trade happens — it is
+treated as HOLD. Do not wrap the labels in markdown; write them plainly.
 
 You are competing against another AI (Claude). Make decisions that maximize risk-adjusted returns.
 Quality of decisions matters more than quantity of trades.
@@ -112,9 +132,12 @@ class GrokAgent(BaseTradingAgent):
 
         logger.info(f"GrokAgent initialized with model: {self.model}")
 
-        # Combine all tool schemas for OpenAI-compatible format
+        # Combine all tool schemas for OpenAI-compatible format. Only the
+        # READ-ONLY trading tools are exposed: order execution is a privileged,
+        # gated operation, not an agent tool. Trades are requested via the
+        # structured ACTION block (see system prompt).
         self.tool_schemas = self._convert_tools_to_openai_format(
-            MARKET_TOOLS_SCHEMA + TRADING_TOOLS_SCHEMA + ANALYSIS_TOOLS_SCHEMA + NEWS_TOOLS_SCHEMA
+            MARKET_TOOLS_SCHEMA + READ_ONLY_TRADING_TOOLS_SCHEMA + ANALYSIS_TOOLS_SCHEMA + NEWS_TOOLS_SCHEMA
         )
 
     def _convert_tools_to_openai_format(self, anthropic_tools: list) -> list:
@@ -367,13 +390,25 @@ MARKET CONDITION: {context.market_condition}
 ---
 
 Analyze the market conditions and make your trading decision.
-You can use tools to get more detailed data if needed.
+You can use tools to get more detailed data if needed (these are read-only — you
+cannot place orders yourself).
 
-After your analysis, clearly state:
-1. STRATEGY: Which strategy are you using and why
-2. ACTION: BUY/SELL/HOLD/CLOSE
-3. If trading: SYMBOL, QUANTITY, STOP_LOSS, and optionally TAKE_PROFIT
-4. REASONING: Why this is the right decision
+After your analysis, explain your STRATEGY and REASONING, then END your response
+with a strict decision block, one field per line, no markdown around the labels:
+
+To trade:
+ACTION: BUY            (or SELL / CLOSE)
+SYMBOL: TSLA           (GOOGL or TSLA)
+QUANTITY: 120          (shares; required for BUY/SELL)
+STOP_LOSS: 393.00      (required for BUY/SELL)
+TAKE_PROFIT: 418.00    (optional)
+
+To stay flat, end with exactly:
+ACTION: HOLD
+
+The system reads this block and routes the trade through the hard risk gate,
+which sizes it, attaches the protective stop, and logs it. Omit the block and
+nothing trades (treated as HOLD).
 
 Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
 """
@@ -443,13 +478,21 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
         elif "RANGE" in text_upper:
             decision.strategy_used = StrategyType.RANGE_TRADING
 
-        # Detect action
-        if "ACTION: BUY" in text_upper or "ACTION:BUY" in text_upper:
-            decision.action = ActionType.BUY
-        elif "ACTION: SELL" in text_upper or "ACTION:SELL" in text_upper:
-            decision.action = ActionType.SELL
-        elif "ACTION: CLOSE" in text_upper or "ACTION:CLOSE" in text_upper:
-            decision.action = ActionType.CLOSE
+        # Detect action. Tolerate markdown/whitespace around the label, e.g.
+        # "ACTION: BUY", "ACTION:BUY", "**ACTION: BUY**", "**ACTION:** BUY".
+        # re.search returns the leftmost match, so the first stated action wins.
+        action_match = re.search(
+            r'\bACTION\b[\s:*\-]*\b(BUY|SELL|HOLD|CLOSE)\b',
+            text_content,
+            re.IGNORECASE,
+        )
+        if action_match:
+            decision.action = {
+                "BUY": ActionType.BUY,
+                "SELL": ActionType.SELL,
+                "HOLD": ActionType.HOLD,
+                "CLOSE": ActionType.CLOSE,
+            }[action_match.group(1).upper()]
 
         # If action requires trading details, try to parse them
         if decision.action in [ActionType.BUY, ActionType.SELL, ActionType.CLOSE]:
@@ -463,8 +506,6 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
             #   "QUANTITY: 150", "QUANTITY: 15 shares", "Shares: 20"
             #   "STOP LOSS: $175", "STOP_LOSS: 175", "Stop-Loss: $175",
             #   "set stop loss at $175", "$1,175.00" (thousands separator)
-            import re
-
             qty_match = re.search(
                 r'(?:QUANTITY|SHARES)[:\s]+(\d+)', text_content, re.IGNORECASE
             )

@@ -139,6 +139,21 @@ TRADING_TOOLS_SCHEMA = [
 ]
 
 
+# Order execution is a privileged, gated operation — NOT an agent-callable tool.
+# Agents must express trades via the structured ACTION block, which routes
+# through RiskManager.validate_decision (stop-distance, 2% sizing, 50% exposure,
+# max positions, daily-loss), attaches a real bracket/OTO stop on Alpaca, and is
+# written to the trades log. These names are withheld from the agent schemas and
+# also refused at dispatch time (defense in depth).
+EXECUTION_TOOL_NAMES = {"place_order", "close_position", "cancel_order"}
+
+# Read-only subset exposed to agents: TRADING_TOOLS_SCHEMA minus execution tools
+# (keeps get_positions, get_account, get_orders).
+READ_ONLY_TRADING_TOOLS_SCHEMA = [
+    tool for tool in TRADING_TOOLS_SCHEMA if tool["name"] not in EXECUTION_TOOL_NAMES
+]
+
+
 class TradingTools:
     """Handles trading tool calls from AI agents."""
 
@@ -148,6 +163,16 @@ class TradingTools:
 
     def execute(self, tool_name: str, parameters: dict) -> dict[str, Any]:
         """Execute a trading tool and return the result."""
+        # Defense in depth: even if an execution tool somehow reaches dispatch,
+        # refuse it here. Trades are placed only through the gated ACTION path.
+        if tool_name in EXECUTION_TOOL_NAMES:
+            return {
+                "error": (
+                    "Direct order placement is disabled — express trades via the "
+                    "ACTION block; the system executes them through the risk gate."
+                )
+            }
+
         handlers = {
             "get_positions": self._get_positions,
             "get_account": self._get_account,
