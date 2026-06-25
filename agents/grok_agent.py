@@ -1,32 +1,35 @@
 """Grok AI trading agent using xAI API."""
+
 import asyncio
+import json
 import logging
 import os
 import re
-import json
 from datetime import datetime
 from typing import Any
+
 import httpx
 
+from config.settings import LEARNING_ENABLED
 from database.json_utils import safe_json_dumps
+from tools.analysis_tools import ANALYSIS_TOOLS_SCHEMA
+from tools.market_tools import MARKET_TOOLS_SCHEMA
+from tools.news_tools import NEWS_TOOLS_SCHEMA
+from tools.trading_tools import READ_ONLY_TRADING_TOOLS_SCHEMA
+
+from .base_agent import (
+    ActionType,
+    BaseTradingAgent,
+    MarketContext,
+    StrategyType,
+    TradingDecision,
+)
 
 logger = logging.getLogger(__name__)
 
-from .base_agent import (
-    BaseTradingAgent,
-    TradingDecision,
-    MarketContext,
-    ActionType,
-    StrategyType,
-)
-from tools.market_tools import MARKET_TOOLS_SCHEMA
-from tools.trading_tools import READ_ONLY_TRADING_TOOLS_SCHEMA
-from tools.analysis_tools import ANALYSIS_TOOLS_SCHEMA
-from tools.news_tools import NEWS_TOOLS_SCHEMA
-from config.settings import LEARNING_ENABLED
-
-
-GROK_SYSTEM_PROMPT = """You are an autonomous AI trading agent managing a $100,000 paper trading portfolio.
+GROK_SYSTEM_PROMPT = (
+    "You are an autonomous AI trading agent managing a $100,000 paper "
+    """trading portfolio.
 You can ONLY trade GOOGL and TSLA stocks on the NASDAQ.
 
 YOUR GOAL: Maximize risk-adjusted returns over a 1-month competition period.
@@ -40,7 +43,8 @@ WHAT YOU RECEIVE EACH HOUR:
 - Recent trade history
 
 NEWS ANALYSIS:
-You have access to news tools that provide sentiment-scored headlines. News sentiment can be:
+You have access to news tools that provide sentiment-scored headlines. """
+    """News sentiment can be:
 - Bullish: Positive news (upgrades, beat earnings, partnerships, etc.)
 - Bearish: Negative news (downgrades, misses, lawsuits, recalls, etc.)
 - Neutral: No clear sentiment signal
@@ -103,10 +107,13 @@ which sizes it, attaches the protective stop on the broker, and logs it. If you
 omit the block (or write prose like "order placed"), NO trade happens — it is
 treated as HOLD. Do not wrap the labels in markdown; write them plainly.
 
-You are competing against another AI (Claude). Make decisions that maximize risk-adjusted returns.
+You are competing against another AI (Claude). Make decisions that """
+    """maximize risk-adjusted returns.
 Quality of decisions matters more than quantity of trades.
 
-Always explain your reasoning clearly. Your decisions and explanations will be logged for analysis."""
+Always explain your reasoning clearly. Your decisions and explanations """
+    "will be logged for analysis."
+)
 
 
 class GrokAgent(BaseTradingAgent):
@@ -117,7 +124,7 @@ class GrokAgent(BaseTradingAgent):
     BASE_RETRY_DELAY = 5.0  # seconds
     REQUEST_TIMEOUT = 360.0  # seconds (increased from 180)
 
-    def __init__(self, tools: dict):
+    def __init__(self, tools: dict[str, Any]):
         super().__init__("grok", tools)
         self.api_key = os.getenv("XAI_API_KEY")
         self.base_url = "https://api.x.ai/v1"
@@ -137,10 +144,15 @@ class GrokAgent(BaseTradingAgent):
         # gated operation, not an agent tool. Trades are requested via the
         # structured ACTION block (see system prompt).
         self.tool_schemas = self._convert_tools_to_openai_format(
-            MARKET_TOOLS_SCHEMA + READ_ONLY_TRADING_TOOLS_SCHEMA + ANALYSIS_TOOLS_SCHEMA + NEWS_TOOLS_SCHEMA
+            MARKET_TOOLS_SCHEMA
+            + READ_ONLY_TRADING_TOOLS_SCHEMA
+            + ANALYSIS_TOOLS_SCHEMA
+            + NEWS_TOOLS_SCHEMA
         )
 
-    def _convert_tools_to_openai_format(self, anthropic_tools: list) -> list:
+    def _convert_tools_to_openai_format(
+        self, anthropic_tools: list[Any]
+    ) -> list[dict[str, Any]]:
         """Convert Anthropic tool format to OpenAI format (used by xAI)."""
         openai_tools = []
         for tool in anthropic_tools:
@@ -192,7 +204,9 @@ class GrokAgent(BaseTradingAgent):
 
                 for attempt in range(self.MAX_RETRIES):
                     try:
-                        logger.debug(f"API call attempt {attempt + 1}/{self.MAX_RETRIES}")
+                        logger.debug(
+                            f"API call attempt {attempt + 1}/{self.MAX_RETRIES}"
+                        )
                         response = await client.post(
                             f"{self.base_url}/chat/completions",
                             headers={
@@ -213,14 +227,19 @@ class GrokAgent(BaseTradingAgent):
                             break  # Success
                         elif response.status_code == 429:
                             # Rate limited - wait and retry
-                            wait_time = self.BASE_RETRY_DELAY * (2 ** attempt)
-                            logger.warning(f"Rate limited (429), retrying in {wait_time}s")
+                            wait_time = self.BASE_RETRY_DELAY * (2**attempt)
+                            logger.warning(
+                                f"Rate limited (429), retrying in {wait_time}s"
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                         elif response.status_code >= 500:
                             # Server error - retry
-                            wait_time = self.BASE_RETRY_DELAY * (2 ** attempt)
-                            logger.warning(f"Server error ({response.status_code}), retrying in {wait_time}s")
+                            wait_time = self.BASE_RETRY_DELAY * (2**attempt)
+                            logger.warning(
+                                f"Server error ({response.status_code}), "
+                                f"retrying in {wait_time}s"
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                         else:
@@ -229,23 +248,37 @@ class GrokAgent(BaseTradingAgent):
 
                     except httpx.TimeoutException:
                         last_error = "Request timed out"
-                        logger.warning(f"Timeout on attempt {attempt + 1}/{self.MAX_RETRIES}")
+                        logger.warning(
+                            f"Timeout on attempt {attempt + 1}/{self.MAX_RETRIES}"
+                        )
                         if attempt < self.MAX_RETRIES - 1:
-                            await asyncio.sleep(self.BASE_RETRY_DELAY * (2 ** attempt))
+                            await asyncio.sleep(self.BASE_RETRY_DELAY * (2**attempt))
                         continue
                     except httpx.ConnectError as e:
                         last_error = f"Connection failed: {e}"
-                        logger.warning(f"Connection error on attempt {attempt + 1}: {e}")
+                        logger.warning(
+                            f"Connection error on attempt {attempt + 1}: {e}"
+                        )
                         if attempt < self.MAX_RETRIES - 1:
-                            await asyncio.sleep(self.BASE_RETRY_DELAY * (2 ** attempt))
+                            await asyncio.sleep(self.BASE_RETRY_DELAY * (2**attempt))
                         continue
 
                 # Check if we got a successful response
                 if response is None or response.status_code != 200:
-                    error_msg = last_error if last_error else f"API error: {response.status_code if response else 'no response'}"
+                    error_msg = (
+                        last_error
+                        if last_error
+                        else (
+                            "API error: "
+                            f"{response.status_code if response else 'no response'}"
+                        )
+                    )
                     if response:
                         error_msg += f" - {response.text[:500]}"
-                    logger.error(f"Grok API failed after {self.MAX_RETRIES} attempts: {error_msg}")
+                    logger.error(
+                        f"Grok API failed after {self.MAX_RETRIES} attempts: "
+                        f"{error_msg}"
+                    )
                     return TradingDecision(
                         timestamp=context.timestamp,
                         action=ActionType.HOLD,
@@ -285,7 +318,9 @@ class GrokAgent(BaseTradingAgent):
                         )
                 else:
                     # Grok has finished reasoning
-                    logger.info(f"Grok completed analysis after {iteration + 1} iteration(s)")
+                    logger.info(
+                        f"Grok completed analysis after {iteration + 1} iteration(s)"
+                    )
                     break
 
         # Parse Grok's final response into a TradingDecision
@@ -302,39 +337,50 @@ class GrokAgent(BaseTradingAgent):
             position_lines = []
             for p in context.positions:
                 lines = [
-                    f"  {p['symbol']}: {p['quantity']} shares @ ${p['avg_entry_price']:.2f}"
+                    f"  {p['symbol']}: {p['quantity']} shares "
+                    f"@ ${p['avg_entry_price']:.2f}"
                 ]
 
                 # P&L line (total + today)
-                pnl_line = f"    P&L: ${p['unrealized_pnl']:+.2f} ({p['unrealized_pnl_percent']:+.1f}%)"
-                if p.get('intraday_pnl') is not None:
-                    pnl_line += f" | Today: ${p['intraday_pnl']:+.2f} ({p.get('intraday_pnl_percent', 0):+.1f}%)"
+                pnl_line = (
+                    f"    P&L: ${p['unrealized_pnl']:+.2f} "
+                    f"({p['unrealized_pnl_percent']:+.1f}%)"
+                )
+                if p.get("intraday_pnl") is not None:
+                    pnl_line += (
+                        f" | Today: ${p['intraday_pnl']:+.2f} "
+                        f"({p.get('intraday_pnl_percent', 0):+.1f}%)"
+                    )
                 lines.append(pnl_line)
 
                 # Time context
-                if p.get('holding_duration'):
+                if p.get("holding_duration"):
                     time_str = f"    Holding: {p['holding_duration']}"
-                    if p.get('entry_time_str') and p['entry_time_str'] != 'Unknown':
+                    if p.get("entry_time_str") and p["entry_time_str"] != "Unknown":
                         time_str += f" since {p['entry_time_str']}"
                     lines.append(time_str)
 
                 # Stop/TP with distance
                 risk_parts = []
-                if p.get('stop_loss'):
-                    stop_dist = p.get('stop_distance_pct', 0)
-                    risk_parts.append(f"Stop: ${p['stop_loss']:.2f} ({stop_dist:+.1f}% away)")
-                if p.get('take_profit'):
-                    tp_dist = p.get('tp_distance_pct', 0)
-                    risk_parts.append(f"TP: ${p['take_profit']:.2f} ({tp_dist:+.1f}% away)")
+                if p.get("stop_loss"):
+                    stop_dist = p.get("stop_distance_pct", 0)
+                    risk_parts.append(
+                        f"Stop: ${p['stop_loss']:.2f} ({stop_dist:+.1f}% away)"
+                    )
+                if p.get("take_profit"):
+                    tp_dist = p.get("tp_distance_pct", 0)
+                    risk_parts.append(
+                        f"TP: ${p['take_profit']:.2f} ({tp_dist:+.1f}% away)"
+                    )
                 if risk_parts:
                     lines.append(f"    {' | '.join(risk_parts)}")
 
                 # Risk exposure
-                if p.get('exposure_percent'):
+                if p.get("exposure_percent"):
                     lines.append(f"    Risk: {p['exposure_percent']:.1f}% of equity")
 
                 # Symbol history
-                if p.get('symbol_total_trades', 0) > 0:
+                if p.get("symbol_total_trades", 0) > 0:
                     lines.append(
                         f"    Symbol history: {p['symbol_total_trades']} trades, "
                         f"{p.get('symbol_win_rate', 0):.0f}% win rate"
@@ -345,9 +391,14 @@ class GrokAgent(BaseTradingAgent):
             positions_str = "\n".join(position_lines)
 
         # Format recent trades
-        trades_str = "None" if not context.recent_trades else "\n".join(
-            f"  - {t['symbol']} {t['side']} {t['quantity']} @ ${t.get('filled_avg_price', 'pending')}"
-            for t in context.recent_trades[:5]
+        trades_str = (
+            "None"
+            if not context.recent_trades
+            else "\n".join(
+                f"  - {t['symbol']} {t['side']} {t['quantity']} "
+                f"@ ${t.get('filled_avg_price', 'pending')}"
+                for t in context.recent_trades[:5]
+            )
         )
 
         # Format symbol data
@@ -355,23 +406,25 @@ class GrokAgent(BaseTradingAgent):
         for symbol, data in context.symbols.items():
             symbols_str += f"""
 {symbol}:
-  Current Price: ${data.get('price', 0):.2f}
-  Daily Change: {data.get('daily_change_percent', 0):+.2f}%
-  RSI: {data.get('rsi', 50):.1f}
-  MACD Histogram: {data.get('macd_histogram', 0):.4f}
-  Above VWAP: {data.get('above_vwap', False)}
-  Short-term Trend: {data.get('trend', 'unknown')}
+  Current Price: ${data.get("price", 0):.2f}
+  Daily Change: {data.get("daily_change_percent", 0):+.2f}%
+  RSI: {data.get("rsi", 50):.1f}
+  MACD Histogram: {data.get("macd_histogram", 0):.4f}
+  Above VWAP: {data.get("above_vwap", False)}
+  Short-term Trend: {data.get("trend", "unknown")}
 """
 
-        return f"""
+        return (
+            f"""
 === HOURLY TRADING DECISION ===
-Timestamp: {context.timestamp.strftime('%Y-%m-%d %H:%M ET')}
+Timestamp: {context.timestamp.strftime("%Y-%m-%d %H:%M ET")}
 
 ACCOUNT STATUS:
-  Equity: ${context.account.get('equity', 100000):.2f}
-  Cash: ${context.account.get('cash', 100000):.2f}
-  Buying Power: ${context.account.get('buying_power', 100000):.2f}
-  Daily P&L: ${context.account.get('daily_pnl', 0):.2f} ({context.account.get('daily_pnl_percent', 0):+.2f}%)
+  Equity: ${context.account.get("equity", 100000):.2f}
+  Cash: ${context.account.get("cash", 100000):.2f}
+  Buying Power: ${context.account.get("buying_power", 100000):.2f}
+  Daily P&L: ${context.account.get("daily_pnl", 0):.2f} """
+            f"""({context.account.get("daily_pnl_percent", 0):+.2f}%)
 
 CURRENT POSITIONS:
 {positions_str}
@@ -412,6 +465,7 @@ nothing trades (treated as HOLD).
 
 Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
 """
+        )
 
     def _format_news(self, context: MarketContext) -> str:
         """Format news sentiment data for the context."""
@@ -419,7 +473,7 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
             return "No news data available"
 
         lines = []
-        for symbol in context.symbols.keys():
+        for symbol in context.symbols:
             sentiment = context.news_sentiment.get(symbol, {})
             if not sentiment:
                 lines.append(f"  {symbol}: No recent news")
@@ -436,12 +490,12 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
             # Add latest headline if available
             if latest and latest != "No recent news":
                 headline_short = latest[:60] + "..." if len(latest) > 60 else latest
-                lines.append(f"    Latest: \"{headline_short}\"")
+                lines.append(f'    Latest: "{headline_short}"')
 
         return "\n".join(lines) if lines else "No news data available"
 
     def _parse_decision(
-        self, message: dict, timestamp: datetime, tool_calls: list
+        self, message: dict[str, Any], timestamp: datetime, tool_calls: list[Any]
     ) -> TradingDecision:
         """Parse Grok's response into a TradingDecision."""
         text_content = message.get("content", "")
@@ -460,7 +514,9 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
 
         if not text_content:
             logger.warning("Grok returned empty content, defaulting to HOLD")
-            decision.reasoning = "API returned empty response - defaulting to defensive HOLD"
+            decision.reasoning = (
+                "API returned empty response - defaulting to defensive HOLD"
+            )
             return decision
 
         # Parse the response for trading signals
@@ -482,7 +538,7 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
         # "ACTION: BUY", "ACTION:BUY", "**ACTION: BUY**", "**ACTION:** BUY".
         # re.search returns the leftmost match, so the first stated action wins.
         action_match = re.search(
-            r'\bACTION\b[\s:*\-]*\b(BUY|SELL|HOLD|CLOSE)\b',
+            r"\bACTION\b[\s:*\-]*\b(BUY|SELL|HOLD|CLOSE)\b",
             text_content,
             re.IGNORECASE,
         )
@@ -507,7 +563,7 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
             #   "STOP LOSS: $175", "STOP_LOSS: 175", "Stop-Loss: $175",
             #   "set stop loss at $175", "$1,175.00" (thousands separator)
             qty_match = re.search(
-                r'(?:QUANTITY|SHARES)[:\s]+(\d+)', text_content, re.IGNORECASE
+                r"(?:QUANTITY|SHARES)[:\s]+(\d+)", text_content, re.IGNORECASE
             )
             if qty_match:
                 decision.quantity = int(qty_match.group(1))
@@ -522,7 +578,7 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
                 stray fragment as a price.
                 """
                 match = re.search(
-                    label_regex + r'[:\s]*(?:at\s+)?\$?\s*([\d,]+(?:\.\d+)?)',
+                    label_regex + r"[:\s]*(?:at\s+)?\$?\s*([\d,]+(?:\.\d+)?)",
                     text_content,
                     re.IGNORECASE,
                 )
@@ -531,11 +587,11 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
                 value = float(match.group(1).replace(",", ""))
                 return value if value >= 10 else None
 
-            stop_loss = _extract_price(r'STOP[\s_-]*LOSS')
+            stop_loss = _extract_price(r"STOP[\s_-]*LOSS")
             if stop_loss is not None:
                 decision.stop_loss = stop_loss
 
-            take_profit = _extract_price(r'TAKE[\s_-]*PROFIT')
+            take_profit = _extract_price(r"TAKE[\s_-]*PROFIT")
             if take_profit is not None:
                 decision.take_profit = take_profit
 
@@ -556,26 +612,29 @@ Remember: You're competing against Claude. Make smart, risk-adjusted decisions.
     async def generate_reflection(
         self,
         episode_id: int,
-        decision_made: dict,
-        market_context: dict,
+        decision_made: dict[str, Any],
+        market_context: dict[str, Any],
         outcome_pnl: float,
-        outcome_status: str
-    ) -> dict:
+        outcome_status: str,
+    ) -> dict[str, Any]:
         """
         Use Grok to reflect on a trade outcome and extract lessons.
 
-        Returns dict with: what_worked, what_failed, lesson_learned, next_time_will, tags
+        Returns dict with: what_worked, what_failed, lesson_learned,
+        next_time_will, tags
         """
         if not LEARNING_ENABLED:
             return {}
 
-        reflection_prompt = f"""You made a trading decision that has now completed. Analyze what happened and learn from it.
+        reflection_prompt = (
+            f"""You made a trading decision that has now completed. """
+            f"""Analyze what happened and learn from it.
 
 DECISION MADE:
-- Action: {decision_made.get('action', 'HOLD')}
-- Symbol: {decision_made.get('symbol', 'N/A')}
-- Strategy: {decision_made.get('strategy', 'unknown')}
-- Your reasoning at the time: {decision_made.get('reasoning', 'N/A')[:500]}
+- Action: {decision_made.get("action", "HOLD")}
+- Symbol: {decision_made.get("symbol", "N/A")}
+- Strategy: {decision_made.get("strategy", "unknown")}
+- Your reasoning at the time: {decision_made.get("reasoning", "N/A")[:500]}
 
 MARKET CONTEXT AT DECISION TIME:
 {json.dumps(market_context, indent=2, default=str)[:1000]}
@@ -593,8 +652,10 @@ Reflect honestly on this trade. Respond in JSON format:
     "tags": ["RELEVANT", "TAGS", "FOR", "SEARCH"]
 }}
 
-Tags should include: the symbol, strategy used, market condition, and any relevant indicators.
+Tags should include: the symbol, strategy used, market condition, """
+            f"""and any relevant indicators.
 Be specific and actionable in your reflections."""
+        )
 
         try:
             async with httpx.AsyncClient() as client:
@@ -609,9 +670,14 @@ Be specific and actionable in your reflections."""
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are analyzing your own trading decisions to learn and improve. Be honest and specific in your reflections. Respond only with valid JSON."
+                                "content": (
+                                    "You are analyzing your own trading "
+                                    "decisions to learn and improve. Be honest "
+                                    "and specific in your reflections. Respond "
+                                    "only with valid JSON."
+                                ),
                             },
-                            {"role": "user", "content": reflection_prompt}
+                            {"role": "user", "content": reflection_prompt},
                         ],
                         "max_tokens": 1024,
                     },
@@ -624,7 +690,7 @@ Be specific and actionable in your reflections."""
                         "what_failed": "",
                         "lesson_learned": f"API error: {response.status_code}",
                         "next_time_will": "",
-                        "tags": []
+                        "tags": [],
                     }
 
                 result = response.json()
@@ -644,7 +710,7 @@ Be specific and actionable in your reflections."""
                         "what_failed": reflection.get("what_failed", ""),
                         "lesson_learned": reflection.get("lesson_learned", ""),
                         "next_time_will": reflection.get("next_time_will", ""),
-                        "tags": reflection.get("tags", [])
+                        "tags": reflection.get("tags", []),
                     }
                 except json.JSONDecodeError:
                     # Fallback: extract what we can
@@ -653,7 +719,10 @@ Be specific and actionable in your reflections."""
                         "what_failed": "",
                         "lesson_learned": text_content[:500] if text_content else "",
                         "next_time_will": "",
-                        "tags": [decision_made.get("symbol", ""), decision_made.get("strategy", "")]
+                        "tags": [
+                            decision_made.get("symbol", ""),
+                            decision_made.get("strategy", ""),
+                        ],
                     }
 
         except Exception as e:
@@ -663,5 +732,5 @@ Be specific and actionable in your reflections."""
                 "what_failed": "",
                 "lesson_learned": f"Reflection failed: {str(e)}",
                 "next_time_will": "",
-                "tags": []
+                "tags": [],
             }

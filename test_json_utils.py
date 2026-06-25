@@ -1,13 +1,15 @@
 """Unit tests for JSON utilities handling NaN/Inf values."""
+
 import json
-import math
 import unittest
+from typing import Any
 
 from database.json_utils import SafeJSONEncoder, safe_json_dumps
 
 # Try importing numpy for additional tests
 try:
     import numpy as np
+
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
@@ -18,21 +20,21 @@ class TestSafeJSONDumps(unittest.TestCase):
 
     def test_nan_to_null(self):
         """NaN values should be converted to null."""
-        data = {"value": float('nan')}
+        data = {"value": float("nan")}
         result = safe_json_dumps(data)
         parsed = json.loads(result)
         self.assertIsNone(parsed["value"])
 
     def test_inf_to_null(self):
         """Positive infinity should be converted to null."""
-        data = {"value": float('inf')}
+        data = {"value": float("inf")}
         result = safe_json_dumps(data)
         parsed = json.loads(result)
         self.assertIsNone(parsed["value"])
 
     def test_negative_inf_to_null(self):
         """Negative infinity should be converted to null."""
-        data = {"value": float('-inf')}
+        data = {"value": float("-inf")}
         result = safe_json_dumps(data)
         parsed = json.loads(result)
         self.assertIsNone(parsed["value"])
@@ -46,14 +48,7 @@ class TestSafeJSONDumps(unittest.TestCase):
 
     def test_nested_dict_with_nan(self):
         """NaN in nested dict should be converted to null."""
-        data = {
-            "level1": {
-                "level2": {
-                    "nan_value": float('nan'),
-                    "normal": 42
-                }
-            }
-        }
+        data = {"level1": {"level2": {"nan_value": float("nan"), "normal": 42}}}
         result = safe_json_dumps(data)
         parsed = json.loads(result)
         self.assertIsNone(parsed["level1"]["level2"]["nan_value"])
@@ -61,7 +56,7 @@ class TestSafeJSONDumps(unittest.TestCase):
 
     def test_list_with_nan(self):
         """NaN in list should be converted to null."""
-        data = {"values": [1.0, float('nan'), 3.0, float('inf')]}
+        data = {"values": [1.0, float("nan"), 3.0, float("inf")]}
         result = safe_json_dumps(data)
         parsed = json.loads(result)
         self.assertEqual(parsed["values"][0], 1.0)
@@ -75,10 +70,10 @@ class TestSafeJSONDumps(unittest.TestCase):
             "string": "hello",
             "int": 42,
             "float": 3.14,
-            "nan": float('nan'),
+            "nan": float("nan"),
             "bool": True,
             "null": None,
-            "list": [1, 2, float('nan')]
+            "list": [1, 2, float("nan")],
         }
         result = safe_json_dumps(data)
         parsed = json.loads(result)
@@ -95,30 +90,26 @@ class TestSafeJSONDumps(unittest.TestCase):
         data = {
             "GOOGL": {
                 "price": 175.50,
-                "rsi": float('nan'),  # NaN during ramp-up
+                "rsi": float("nan"),  # NaN during ramp-up
                 "macd": {
-                    "value": float('nan'),
-                    "signal": float('nan'),
-                    "histogram": float('nan')
+                    "value": float("nan"),
+                    "signal": float("nan"),
+                    "histogram": float("nan"),
                 },
-                "sma_20": float('nan'),
+                "sma_20": float("nan"),
                 "sma_50": 172.30,
                 "volume": 1500000,
-                "change_pct": 0.75
+                "change_pct": 0.75,
             },
             "TSLA": {
                 "price": 250.00,
                 "rsi": 55.5,
-                "macd": {
-                    "value": 2.5,
-                    "signal": 1.8,
-                    "histogram": 0.7
-                },
+                "macd": {"value": 2.5, "signal": 1.8, "histogram": 0.7},
                 "sma_20": 248.0,
                 "sma_50": 245.0,
                 "volume": 3000000,
-                "change_pct": -1.2
-            }
+                "change_pct": -1.2,
+            },
         }
         result = safe_json_dumps(data)
         parsed = json.loads(result)
@@ -135,23 +126,23 @@ class TestSafeJSONDumps(unittest.TestCase):
 
     def test_empty_dict(self):
         """Empty dict should serialize correctly."""
-        data = {}
+        data: dict[str, Any] = {}
         result = safe_json_dumps(data)
         self.assertEqual(result, "{}")
 
     def test_empty_list(self):
         """Empty list should serialize correctly."""
-        data = []
+        data: list[Any] = []
         result = safe_json_dumps(data)
         self.assertEqual(result, "[]")
 
     def test_output_is_valid_json(self):
         """Output should always be valid JSON."""
         data = {
-            "nan": float('nan'),
-            "inf": float('inf'),
-            "ninf": float('-inf'),
-            "nested": {"more_nan": float('nan')}
+            "nan": float("nan"),
+            "inf": float("inf"),
+            "ninf": float("-inf"),
+            "nested": {"more_nan": float("nan")},
         }
         result = safe_json_dumps(data)
         # This should not raise
@@ -215,9 +206,9 @@ class TestNumpyTypes(unittest.TestCase):
             "np_float": np.float64(2.71),
             "py_int": 42,
             "np_int": np.int64(100),
-            "py_nan": float('nan'),
+            "py_nan": float("nan"),
             "np_nan": np.nan,
-            "list": [np.float64(1.0), np.nan, 3.0]
+            "list": [np.float64(1.0), np.nan, 3.0],
         }
         result = safe_json_dumps(data)
         parsed = json.loads(result)
@@ -234,7 +225,7 @@ class TestSafeJSONEncoder(unittest.TestCase):
 
     def test_encoder_with_json_dumps(self):
         """SafeJSONEncoder should work directly with json.dumps."""
-        data = {"nan": float('nan'), "value": 42}
+        data = {"nan": float("nan"), "value": 42}
         result = json.dumps(data, cls=SafeJSONEncoder)
         parsed = json.loads(result)
         self.assertIsNone(parsed["nan"])

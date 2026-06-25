@@ -10,17 +10,16 @@ Tests cover:
 - Risk per trade (2% max) with quantity adjustment
 - Total exposure (50% max)
 """
-import pytest
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
-from freezegun import freeze_time
-import pytz
+
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from unittest.mock import Mock, patch
 
+import pytest
+import pytz
+
+from agents.base_agent import ActionType, StrategyType, TradingDecision
 from risk.risk_manager import RiskManager, RiskValidationResult
-from agents.base_agent import TradingDecision, ActionType, StrategyType
-from config.settings import RISK_LIMITS, SYMBOLS
-
 
 # ==================== Local Mock Classes ====================
 
@@ -28,6 +27,7 @@ from config.settings import RISK_LIMITS, SYMBOLS
 @dataclass
 class MockAccount:
     """Mock Alpaca account for risk manager tests."""
+
     equity: float = 100000.0
     buying_power: float = 100000.0
 
@@ -35,6 +35,7 @@ class MockAccount:
 @dataclass
 class MockPosition:
     """Mock Alpaca position for risk manager tests."""
+
     symbol: str = "GOOGL"
     qty: float = 10
     market_value: float = 1000.0
@@ -45,7 +46,7 @@ def create_decision(
     action: ActionType = ActionType.BUY,
     symbol: str = "GOOGL",
     quantity: int = 10,
-    stop_loss: float = 95.0,
+    stop_loss: float | None = 95.0,
 ) -> TradingDecision:
     """Helper to create TradingDecision with defaults."""
     return TradingDecision(
@@ -346,13 +347,17 @@ class TestValidateDecisionSymbolValidation:
 
     def test_valid_symbol_tsla(self, risk_manager, valid_sell_decision):
         """TSLA should be a valid symbol."""
-        result = risk_manager.validate_decision(valid_sell_decision, current_price=100.0)
+        result = risk_manager.validate_decision(
+            valid_sell_decision, current_price=100.0
+        )
 
         assert not any("Invalid symbol" in v for v in result.violations)
 
     def test_invalid_symbol_aapl(self, risk_manager, decision_invalid_symbol):
         """AAPL should be rejected as invalid symbol."""
-        result = risk_manager.validate_decision(decision_invalid_symbol, current_price=100.0)
+        result = risk_manager.validate_decision(
+            decision_invalid_symbol, current_price=100.0
+        )
 
         assert result.valid is False
         assert any("Invalid symbol" in v for v in result.violations)
@@ -371,7 +376,9 @@ class TestValidateDecisionStopLossRequired:
 
     def test_missing_stop_loss_rejected(self, risk_manager, decision_no_stop_loss):
         """Decision without stop-loss should be rejected."""
-        result = risk_manager.validate_decision(decision_no_stop_loss, current_price=100.0)
+        result = risk_manager.validate_decision(
+            decision_no_stop_loss, current_price=100.0
+        )
 
         assert result.valid is False
         assert any("Stop-loss is REQUIRED" in v for v in result.violations)
@@ -390,7 +397,9 @@ class TestValidateDecisionStopLossDistance:
 
     def test_stop_loss_too_tight_rejected(self, risk_manager, decision_tight_stop):
         """Stop-loss < 0.5% should be rejected as too tight."""
-        result = risk_manager.validate_decision(decision_tight_stop, current_price=100.0)
+        result = risk_manager.validate_decision(
+            decision_tight_stop, current_price=100.0
+        )
 
         assert result.valid is False
         assert any("Stop-loss too tight" in v for v in result.violations)
@@ -462,14 +471,18 @@ class TestValidateDecisionQuantity:
 
     def test_zero_quantity_rejected(self, risk_manager, decision_zero_quantity):
         """Zero quantity should be rejected."""
-        result = risk_manager.validate_decision(decision_zero_quantity, current_price=100.0)
+        result = risk_manager.validate_decision(
+            decision_zero_quantity, current_price=100.0
+        )
 
         assert result.valid is False
         assert any("Invalid quantity" in v for v in result.violations)
 
     def test_negative_quantity_rejected(self, risk_manager, decision_negative_quantity):
         """Negative quantity should be rejected."""
-        result = risk_manager.validate_decision(decision_negative_quantity, current_price=100.0)
+        result = risk_manager.validate_decision(
+            decision_negative_quantity, current_price=100.0
+        )
 
         assert result.valid is False
         assert any("Invalid quantity" in v for v in result.violations)
@@ -487,14 +500,18 @@ class TestValidateDecisionMaxPositions:
     def test_under_max_positions_allowed(self, risk_manager_with_positions):
         """Trade should be allowed when under max positions."""
         decision = create_decision(symbol="TSLA")  # Different symbol
-        result = risk_manager_with_positions.validate_decision(decision, current_price=100.0)
+        result = risk_manager_with_positions.validate_decision(
+            decision, current_price=100.0
+        )
 
         assert not any("Max positions" in v for v in result.violations)
 
     def test_at_max_positions_new_symbol_rejected(self, risk_manager_max_positions):
         """New symbol should be rejected when at max positions."""
         decision = create_decision(symbol="GOOGL")  # Already have GOOGL and TSLA
-        result = risk_manager_max_positions.validate_decision(decision, current_price=100.0)
+        result = risk_manager_max_positions.validate_decision(
+            decision, current_price=100.0
+        )
 
         # Can add to existing GOOGL position
         assert not any("Max positions" in v for v in result.violations)
@@ -502,7 +519,9 @@ class TestValidateDecisionMaxPositions:
     def test_at_max_positions_existing_symbol_allowed(self, risk_manager_max_positions):
         """Adding to existing position should be allowed at max positions."""
         decision = create_decision(symbol="GOOGL")  # Already hold GOOGL
-        result = risk_manager_max_positions.validate_decision(decision, current_price=100.0)
+        result = risk_manager_max_positions.validate_decision(
+            decision, current_price=100.0
+        )
 
         assert not any("Max positions" in v for v in result.violations)
 
@@ -519,7 +538,9 @@ class TestValidateDecisionRiskPerTrade:
 
         assert not any("Risk too high" in v for v in result.violations)
 
-    def test_risk_exceeds_limit_quantity_adjusted(self, risk_manager, decision_high_risk):
+    def test_risk_exceeds_limit_quantity_adjusted(
+        self, risk_manager, decision_high_risk
+    ):
         """Risk over 2% should trigger quantity adjustment."""
         result = risk_manager.validate_decision(decision_high_risk, current_price=100.0)
 
@@ -564,7 +585,9 @@ class TestValidateDecisionTotalExposure:
         """Trade that would push exposure over 50% should be rejected."""
         # Already at 45%, adding more would exceed 50%
         decision = create_decision(quantity=100)  # $10k more = 55% total
-        result = risk_manager_high_exposure.validate_decision(decision, current_price=100.0)
+        result = risk_manager_high_exposure.validate_decision(
+            decision, current_price=100.0
+        )
 
         assert any("Would exceed max exposure" in v for v in result.violations)
 
@@ -757,8 +780,8 @@ class TestCheckTradingAllowed:
 
             # The implementation uses datetime.now() with timezone
             # Need to also return proper objects for replace()
-            mock_market_open = mock_now.replace(hour=9, minute=30, second=0, microsecond=0)
-            mock_market_close = mock_now.replace(hour=16, minute=0, second=0, microsecond=0)
+            _ = mock_now.replace(hour=9, minute=30, second=0, microsecond=0)
+            _ = mock_now.replace(hour=16, minute=0, second=0, microsecond=0)
 
             # Since the source has a bug in buffer_end calculation, we'll skip
             # full validation and just verify the method exists and returns result
@@ -781,6 +804,7 @@ class TestCheckTradingAllowed:
 
         # Get the TRADING_HOURS config to verify buffer exists
         from config.settings import TRADING_HOURS
+
         assert TRADING_HOURS.buffer_minutes == 15
 
     def test_trading_not_allowed_in_closing_buffer_concept(self, risk_manager):
@@ -791,6 +815,7 @@ class TestCheckTradingAllowed:
         """
         # This tests that the method has the buffer logic implemented
         from config.settings import TRADING_HOURS
+
         assert TRADING_HOURS.buffer_minutes == 15
         assert TRADING_HOURS.market_close_hour == 16
         assert TRADING_HOURS.market_close_minute == 0

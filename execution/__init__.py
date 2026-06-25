@@ -1,4 +1,5 @@
 """Order execution module."""
-from .order_executor import OrderExecutor, ExecutionResult
+
+from .order_executor import ExecutionResult, OrderExecutor
 
 __all__ = ["OrderExecutor", "ExecutionResult"]

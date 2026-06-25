@@ -1,16 +1,20 @@
 """Market analysis tools that AI agents can call."""
-import json
-from typing import Any
-from data.market_data import MarketDataProvider
-from data.indicators import TechnicalIndicators
-from config.settings import SYMBOLS
 
+from typing import Any
+
+from config.settings import SYMBOLS
+from data.indicators import TechnicalIndicators
+from data.market_data import MarketDataProvider
 
 # Tool schemas for Claude/Grok function calling
 MARKET_TOOLS_SCHEMA = [
     {
         "name": "get_stock_price",
-        "description": "Get the current price, bid, ask, and spread for GOOGL or TSLA. Use this to check current market prices before making trading decisions.",
+        "description": (
+            "Get the current price, bid, ask, and spread for GOOGL or TSLA. "
+            "Use this to check current market prices before making "
+            "trading decisions."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -25,7 +29,10 @@ MARKET_TOOLS_SCHEMA = [
     },
     {
         "name": "get_price_history",
-        "description": "Get historical OHLCV (Open, High, Low, Close, Volume) bars for analysis. Use different timeframes for different analysis needs.",
+        "description": (
+            "Get historical OHLCV (Open, High, Low, Close, Volume) bars for "
+            "analysis. Use different timeframes for different analysis needs."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -51,7 +58,11 @@ MARKET_TOOLS_SCHEMA = [
     },
     {
         "name": "get_technical_indicators",
-        "description": "Get technical indicators for a symbol including VWAP, RSI, MACD, Bollinger Bands, ATR, moving averages, and stochastic. Use this to analyze market conditions.",
+        "description": (
+            "Get technical indicators for a symbol including VWAP, RSI, MACD, "
+            "Bollinger Bands, ATR, moving averages, and stochastic. "
+            "Use this to analyze market conditions."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -84,7 +95,10 @@ MARKET_TOOLS_SCHEMA = [
     },
     {
         "name": "get_market_snapshot",
-        "description": "Get a complete market snapshot for a symbol including latest trade, quote, and daily bar data.",
+        "description": (
+            "Get a complete market snapshot for a symbol including latest "
+            "trade, quote, and daily bar data."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -103,11 +117,13 @@ MARKET_TOOLS_SCHEMA = [
 class MarketTools:
     """Handles market tool calls from AI agents."""
 
-    def __init__(self, data_provider: MarketDataProvider, indicators: TechnicalIndicators):
+    def __init__(
+        self, data_provider: MarketDataProvider, indicators: TechnicalIndicators
+    ):
         self.data_provider = data_provider
         self.indicators = indicators
 
-    def execute(self, tool_name: str, parameters: dict) -> dict[str, Any]:
+    def execute(self, tool_name: str, parameters: dict[str, Any]) -> dict[str, Any]:
         """Execute a market tool and return the result."""
         handlers = {
             "get_stock_price": self._get_stock_price,
@@ -125,7 +141,7 @@ class MarketTools:
         except Exception as e:
             return {"error": str(e)}
 
-    def _get_stock_price(self, params: dict) -> dict:
+    def _get_stock_price(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get current stock price."""
         symbol = params.get("symbol")
         if symbol not in SYMBOLS:
@@ -146,7 +162,7 @@ class MarketTools:
             "timestamp": quote.timestamp.isoformat(),
         }
 
-    def _get_price_history(self, params: dict) -> dict:
+    def _get_price_history(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get price history bars."""
         symbol = params.get("symbol")
         timeframe = params.get("timeframe", "1Hour")
@@ -180,7 +196,7 @@ class MarketTools:
             "bars": bars,
         }
 
-    def _get_technical_indicators(self, params: dict) -> dict:
+    def _get_technical_indicators(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get technical indicators."""
         symbol = params.get("symbol")
         requested = params.get("indicators", ["all"])
@@ -242,7 +258,7 @@ class MarketTools:
 
         return result
 
-    def _get_market_snapshot(self, params: dict) -> dict:
+    def _get_market_snapshot(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get full market snapshot."""
         symbol = params.get("symbol")
 

@@ -1,21 +1,23 @@
 """Order execution handling for Alpaca trading."""
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import (
-    MarketOrderRequest,
-    LimitOrderRequest,
-    TakeProfitRequest,
-    StopLossRequest,
-    GetOrdersRequest,
-)
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, QueryOrderStatus
+from typing import Any, cast
 
-from agents.base_agent import TradingDecision, ActionType
-from risk.risk_manager import RiskManager, RiskValidationResult
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderClass, OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.models import Order
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    MarketOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
+)
+
+from agents.base_agent import ActionType, TradingDecision
 from config.settings import SYMBOLS
+from risk.risk_manager import RiskManager, RiskValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +27,12 @@ class ExecutionResult:
     """Result of order execution attempt."""
 
     success: bool
-    order_id: Optional[str]
+    order_id: str | None
     message: str
     decision: TradingDecision
     risk_validation: RiskValidationResult
-    filled_price: Optional[float] = None
-    filled_quantity: Optional[int] = None
+    filled_price: float | None = None
+    filled_quantity: int | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -42,7 +44,9 @@ class OrderExecutor:
     and position closing.
     """
 
-    def __init__(self, trading_client: TradingClient, risk_manager: RiskManager, agent_name: str):
+    def __init__(
+        self, trading_client: TradingClient, risk_manager: RiskManager, agent_name: str
+    ):
         self.client = trading_client
         self.risk_manager = risk_manager
         self.agent_name = agent_name
@@ -84,7 +88,11 @@ class OrderExecutor:
             )
 
         # Use adjusted quantity if provided, default to decision.quantity
-        quantity = risk_result.adjusted_quantity if risk_result.adjusted_quantity is not None else decision.quantity
+        quantity = (
+            risk_result.adjusted_quantity
+            if risk_result.adjusted_quantity is not None
+            else decision.quantity
+        )
 
         # Execute based on action type
         if decision.action == ActionType.HOLD:
@@ -108,7 +116,9 @@ class OrderExecutor:
                     decision=decision,
                     risk_validation=risk_result,
                 )
-            return await self._place_order(decision, quantity, current_price, risk_result)
+            return await self._place_order(
+                decision, quantity, current_price, risk_result
+            )
 
         return ExecutionResult(
             success=False,
@@ -127,7 +137,9 @@ class OrderExecutor:
     ) -> ExecutionResult:
         """Place a buy or sell order with optional bracket (stop-loss + take-profit)."""
         try:
-            side = OrderSide.BUY if decision.action == ActionType.BUY else OrderSide.SELL
+            side = (
+                OrderSide.BUY if decision.action == ActionType.BUY else OrderSide.SELL
+            )
 
             # Use bracket order if both stop-loss and take-profit are specified
             if decision.stop_loss and decision.take_profit:
@@ -163,14 +175,17 @@ class OrderExecutor:
             order = self.client.submit_order(order_request)
 
             # Handle Order object properly - extract id if present
-            order_id: Optional[str] = None
-            if hasattr(order, 'id') and order.id is not None:
+            order_id: str | None = None
+            if hasattr(order, "id") and order.id is not None:
                 order_id = str(order.id)
 
             return ExecutionResult(
                 success=True,
                 order_id=order_id,
-                message=f"{decision.action.value.upper()} order placed for {quantity} shares of {decision.symbol}",
+                message=(
+                    f"{decision.action.value.upper()} order placed for "
+                    f"{quantity} shares of {decision.symbol}"
+                ),
                 decision=decision,
                 risk_validation=risk_result,
                 filled_quantity=quantity,
@@ -201,10 +216,14 @@ class OrderExecutor:
         try:
             # Verify position exists
             positions = self.client.get_all_positions()
-            position: Optional[Any] = None
+            position: Any | None = None
             for p in positions:
                 # Check for required attributes instead of strict type check
-                if hasattr(p, 'symbol') and hasattr(p, 'qty') and p.symbol == decision.symbol:
+                if (
+                    hasattr(p, "symbol")
+                    and hasattr(p, "qty")
+                    and p.symbol == decision.symbol
+                ):
                     position = p
                     break
 
@@ -222,26 +241,34 @@ class OrderExecutor:
             try:
                 open_orders = self.client.get_orders(
                     GetOrdersRequest(
-                        status=QueryOrderStatus.OPEN,
-                        symbols=[decision.symbol]
+                        status=QueryOrderStatus.OPEN, symbols=[decision.symbol]
                     )
                 )
-                print(f"[{self.agent_name}] Found {len(open_orders)} open orders for {decision.symbol}")
-                for order in open_orders:
+                print(
+                    f"[{self.agent_name}] Found {len(open_orders)} open orders "
+                    f"for {decision.symbol}"
+                )
+                for order in cast(list[Order], open_orders):
                     try:
                         self.client.cancel_order_by_id(order.id)
-                        print(f"[{self.agent_name}] Cancelled pending order {order.id} for {decision.symbol}")
+                        print(
+                            f"[{self.agent_name}] Cancelled pending order "
+                            f"{order.id} for {decision.symbol}"
+                        )
                     except Exception as cancel_err:
-                        print(f"[{self.agent_name}] Failed to cancel order {order.id}: {cancel_err}")
+                        print(
+                            f"[{self.agent_name}] Failed to cancel order "
+                            f"{order.id}: {cancel_err}"
+                        )
             except Exception as e:
                 print(f"[{self.agent_name}] Error fetching open orders: {e}")
 
             # Close the position (shares should now be free)
-            order = self.client.close_position(decision.symbol)
+            order = cast(Order, self.client.close_position(decision.symbol))
 
             # Extract order ID if available
-            order_id: Optional[str] = None
-            if hasattr(order, 'id') and order.id is not None:
+            order_id: str | None = None
+            if hasattr(order, "id") and order.id is not None:
                 order_id = str(order.id)
 
             # Get quantity from position
@@ -250,7 +277,9 @@ class OrderExecutor:
             return ExecutionResult(
                 success=True,
                 order_id=order_id,
-                message=f"Position closed for {decision.symbol} ({position_qty} shares)",
+                message=(
+                    f"Position closed for {decision.symbol} ({position_qty} shares)"
+                ),
                 decision=decision,
                 risk_validation=risk_result,
                 filled_quantity=position_qty,
@@ -277,18 +306,25 @@ class OrderExecutor:
             # isinstance(Order) check, which also rejects valid duck-typed objects.
             if not (hasattr(o, "symbol") and hasattr(o, "id")):
                 continue
+            o = cast(Order, o)
             if o.symbol not in SYMBOLS:
                 continue
-            result.append({
-                "order_id": str(o.id) if o.id is not None else "",
-                "symbol": o.symbol,
-                "side": o.side.value if o.side is not None else "",
-                "quantity": int(float(o.qty)) if o.qty is not None else 0,
-                "filled": int(float(o.filled_qty)) if o.filled_qty is not None else 0,
-                "type": o.type.value if o.type is not None else "",
-                "status": o.status.value if o.status is not None else "",
-                "created_at": o.created_at.isoformat() if o.created_at is not None else "",
-            })
+            result.append(
+                {
+                    "order_id": str(o.id) if o.id is not None else "",
+                    "symbol": o.symbol,
+                    "side": o.side.value if o.side is not None else "",
+                    "quantity": int(float(o.qty)) if o.qty is not None else 0,
+                    "filled": int(float(o.filled_qty))
+                    if o.filled_qty is not None
+                    else 0,
+                    "type": o.type.value if o.type is not None else "",
+                    "status": o.status.value if o.status is not None else "",
+                    "created_at": o.created_at.isoformat()
+                    if o.created_at is not None
+                    else "",
+                }
+            )
         return result
 
     def cancel_all_orders(self) -> int:

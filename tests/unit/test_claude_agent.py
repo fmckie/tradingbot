@@ -4,10 +4,13 @@ Comprehensive tests for Claude agent decision parsing.
 Tests the _parse_decision() method with various input formats
 to ensure robust parsing of AI responses.
 """
-import pytest
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+from unittest.mock import patch
+
+import pytest
 
 from agents.base_agent import ActionType, StrategyType, TradingDecision
 from agents.claude_agent import ClaudeAgent
@@ -16,6 +19,7 @@ from agents.claude_agent import ClaudeAgent
 @dataclass
 class MockTextBlock:
     """Mock Anthropic text block."""
+
     type: str = "text"
     text: str = ""
 
@@ -23,7 +27,8 @@ class MockTextBlock:
 @dataclass
 class MockResponse:
     """Mock Anthropic response."""
-    content: list
+
+    content: list[Any]
     stop_reason: str = "end_turn"
 
 
@@ -33,10 +38,12 @@ class TestClaudeAgentParseDecision:
     @pytest.fixture
     def agent(self):
         """Create ClaudeAgent instance with mocked dependencies."""
-        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
-            with patch('agents.claude_agent.anthropic.Anthropic'):
-                agent = ClaudeAgent(tools={})
-                return agent
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("agents.claude_agent.anthropic.Anthropic"),
+        ):
+            agent = ClaudeAgent(tools={})
+            return agent
 
     @pytest.fixture
     def timestamp(self):
@@ -271,7 +278,7 @@ class TestClaudeAgentParseDecision:
         I recommend buying 25 shares at current prices.
         Stop Loss: $175.00
         """)
-        decision = agent._parse_decision(response, timestamp, [])
+        agent._parse_decision(response, timestamp, [])
         # Note: current implementation may not parse this correctly
         # This test documents expected behavior
 
@@ -631,7 +638,11 @@ class TestClaudeAgentParseDecision:
     def test_parse_tool_calls_preserved(self, agent, timestamp):
         """Test that tool calls list is preserved."""
         tool_calls = [
-            {"tool": "get_stock_price", "input": {"symbol": "GOOGL"}, "result": {"price": 185.0}}
+            {
+                "tool": "get_stock_price",
+                "input": {"symbol": "GOOGL"},
+                "result": {"price": 185.0},
+            }
         ]
         response = self._make_response("ACTION: BUY GOOGL")
         decision = agent._parse_decision(response, timestamp, tool_calls)
@@ -645,12 +656,16 @@ class TestClaudeAgentParseDecision:
 
     def test_parse_very_long_response(self, agent, timestamp):
         """Test parsing a very long response."""
-        long_text = "This is analysis. " * 100 + """
+        long_text = (
+            "This is analysis. " * 100
+            + """
         ACTION: BUY
         Symbol: GOOGL
         QUANTITY: 10
         STOP LOSS: $175.00
-        """ + "More analysis. " * 100
+        """
+            + "More analysis. " * 100
+        )
         response = self._make_response(long_text)
         decision = agent._parse_decision(response, timestamp, [])
         assert decision.action == ActionType.BUY
@@ -678,7 +693,7 @@ class TestClaudeAgentParseDecision:
         QUANTITY: 1 000 shares
         STOP LOSS: $175.00
         """)
-        decision = agent._parse_decision(response, timestamp, [])
+        agent._parse_decision(response, timestamp, [])
         # Current implementation may not handle this
 
     def test_parse_action_at_end_of_response(self, agent, timestamp):
@@ -713,9 +728,11 @@ class TestClaudeAgentIntegration:
     @pytest.fixture
     def agent(self):
         """Create ClaudeAgent instance with mocked dependencies."""
-        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
-            with patch('agents.claude_agent.anthropic.Anthropic'):
-                return ClaudeAgent(tools={})
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch("agents.claude_agent.anthropic.Anthropic"),
+        ):
+            return ClaudeAgent(tools={})
 
     def test_strategy_explanation_updated(self, agent):
         """Test that strategy explanation is updated after parsing."""

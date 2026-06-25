@@ -1,4 +1,5 @@
 """Competition settings and risk limits (not strategy - AI decides that)."""
+
 import os
 from dataclasses import dataclass
 from typing import Final
@@ -12,7 +13,9 @@ POSTGRES_POOL_SIZE: Final[int] = int(os.getenv("POSTGRES_POOL_SIZE", "5"))
 
 # Learning system settings
 LEARNING_ENABLED: Final[bool] = os.getenv("LEARNING_ENABLED", "true").lower() == "true"
-SIGNIFICANT_PNL_THRESHOLD: Final[float] = float(os.getenv("SIGNIFICANT_PNL_THRESHOLD", "50.0"))
+SIGNIFICANT_PNL_THRESHOLD: Final[float] = float(
+    os.getenv("SIGNIFICANT_PNL_THRESHOLD", "50.0")
+)
 MAX_LEARNINGS_PER_RECALL: Final[int] = int(os.getenv("MAX_LEARNINGS_PER_RECALL", "10"))
 
 # Starting capital for each account

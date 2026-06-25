@@ -4,9 +4,12 @@ Comprehensive tests for Grok agent decision parsing.
 Tests the _parse_decision() method with various input formats
 to ensure robust parsing of AI responses.
 """
-import pytest
+
 from datetime import datetime
-from unittest.mock import MagicMock, patch, AsyncMock
+from typing import Any
+from unittest.mock import patch
+
+import pytest
 
 from agents.base_agent import ActionType, StrategyType, TradingDecision
 from agents.grok_agent import GrokAgent
@@ -18,7 +21,7 @@ class TestGrokAgentParseDecision:
     @pytest.fixture
     def agent(self):
         """Create GrokAgent instance with mocked dependencies."""
-        with patch.dict('os.environ', {'XAI_API_KEY': 'test-key'}):
+        with patch.dict("os.environ", {"XAI_API_KEY": "test-key"}):
             agent = GrokAgent(tools={})
             return agent
 
@@ -27,7 +30,7 @@ class TestGrokAgentParseDecision:
         """Standard timestamp for tests."""
         return datetime(2024, 1, 15, 10, 30, 0)
 
-    def _make_message(self, content: str) -> dict:
+    def _make_message(self, content: str) -> dict[str, Any]:
         """Helper to create mock message from text."""
         return {"content": content}
 
@@ -525,7 +528,7 @@ class TestGrokAgentParseDecision:
 
     def test_parse_missing_content_key(self, agent, timestamp):
         """Test parsing message without content key."""
-        message = {}
+        message: dict[str, Any] = {}
         decision = agent._parse_decision(message, timestamp, [])
         assert decision.action == ActionType.HOLD
         assert decision.strategy_used == StrategyType.DEFENSIVE
@@ -617,7 +620,11 @@ class TestGrokAgentParseDecision:
     def test_parse_tool_calls_preserved(self, agent, timestamp):
         """Test that tool calls list is preserved."""
         tool_calls = [
-            {"tool": "get_stock_price", "input": {"symbol": "GOOGL"}, "result": {"price": 185.0}}
+            {
+                "tool": "get_stock_price",
+                "input": {"symbol": "GOOGL"},
+                "result": {"price": 185.0},
+            }
         ]
         message = self._make_message("ACTION: BUY GOOGL")
         decision = agent._parse_decision(message, timestamp, tool_calls)
@@ -631,12 +638,16 @@ class TestGrokAgentParseDecision:
 
     def test_parse_very_long_response(self, agent, timestamp):
         """Test parsing a very long response."""
-        long_text = "This is analysis. " * 100 + """
+        long_text = (
+            "This is analysis. " * 100
+            + """
         ACTION: BUY
         Symbol: GOOGL
         QUANTITY: 10
         STOP LOSS: $175.00
-        """ + "More analysis. " * 100
+        """
+            + "More analysis. " * 100
+        )
         message = self._make_message(long_text)
         decision = agent._parse_decision(message, timestamp, [])
         assert decision.action == ActionType.BUY
@@ -649,7 +660,7 @@ class TestGrokAgentIntegration:
     @pytest.fixture
     def agent(self):
         """Create GrokAgent instance with mocked dependencies."""
-        with patch.dict('os.environ', {'XAI_API_KEY': 'test-key'}):
+        with patch.dict("os.environ", {"XAI_API_KEY": "test-key"}):
             return GrokAgent(tools={})
 
     def test_strategy_explanation_updated(self, agent):
@@ -687,7 +698,7 @@ class TestGrokAgentIntegration:
     def test_tool_schema_conversion(self, agent):
         """Test that Anthropic tools are converted to OpenAI format."""
         # The agent should have converted tool schemas
-        assert hasattr(agent, 'tool_schemas')
+        assert hasattr(agent, "tool_schemas")
         # Check the format is OpenAI compatible
         for tool in agent.tool_schemas:
             assert "type" in tool

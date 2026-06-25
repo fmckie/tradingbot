@@ -1,12 +1,10 @@
 """Technical indicators calculated from market data."""
-import pandas as pd
-import numpy as np
+
 from dataclasses import dataclass
-from typing import Optional
-import ta
-from ta.trend import MACD, EMAIndicator, SMAIndicator
+
 from ta.momentum import RSIIndicator, StochasticOscillator
-from ta.volatility import BollingerBands, AverageTrueRange
+from ta.trend import MACD, EMAIndicator, SMAIndicator
+from ta.volatility import AverageTrueRange, BollingerBands
 from ta.volume import VolumeWeightedAveragePrice
 
 from .market_data import MarketDataProvider
@@ -90,7 +88,9 @@ class TechnicalIndicators:
         if len(df) < slow:
             return MACDResult(macd_line=0.0, signal_line=0.0, histogram=0.0)
 
-        macd = MACD(close=df["close"], window_slow=slow, window_fast=fast, window_sign=signal)
+        macd = MACD(
+            close=df["close"], window_slow=slow, window_fast=fast, window_sign=signal
+        )
 
         return MACDResult(
             macd_line=float(macd.macd().iloc[-1]),
@@ -98,7 +98,9 @@ class TechnicalIndicators:
             histogram=float(macd.macd_diff().iloc[-1]),
         )
 
-    def calculate_bollinger_bands(self, symbol: str, period: int = 20, std: int = 2) -> BollingerResult:
+    def calculate_bollinger_bands(
+        self, symbol: str, period: int = 20, std: int = 2
+    ) -> BollingerResult:
         """Calculate Bollinger Bands."""
         df = self.data_provider.get_bars(symbol, "1Hour", limit=period * 3)
 
@@ -125,7 +127,9 @@ class TechnicalIndicators:
         if len(df) < period:
             return 0.0
 
-        atr = AverageTrueRange(high=df["high"], low=df["low"], close=df["close"], window=period)
+        atr = AverageTrueRange(
+            high=df["high"], low=df["low"], close=df["close"], window=period
+        )
         return float(atr.average_true_range().iloc[-1])
 
     def calculate_ema(self, symbol: str, period: int) -> float:
@@ -158,7 +162,11 @@ class TechnicalIndicators:
             return 50.0, 50.0
 
         stoch = StochasticOscillator(
-            high=df["high"], low=df["low"], close=df["close"], window=k_period, smooth_window=d_period
+            high=df["high"],
+            low=df["low"],
+            close=df["close"],
+            window=k_period,
+            smooth_window=d_period,
         )
 
         return float(stoch.stoch().iloc[-1]), float(stoch.stoch_signal().iloc[-1])
@@ -179,7 +187,9 @@ class TechnicalIndicators:
         if len(df) < 2:
             return 0.0
 
-        return float((df["close"].iloc[-1] - df["close"].iloc[0]) / df["close"].iloc[0] * 100)
+        return float(
+            (df["close"].iloc[-1] - df["close"].iloc[0]) / df["close"].iloc[0] * 100
+        )
 
     def get_all_indicators(self, symbol: str) -> IndicatorSnapshot:
         """Get all technical indicators for a symbol."""
@@ -207,22 +217,43 @@ class TechnicalIndicators:
         """Format indicators as readable text for AI consumption."""
         ind = self.get_all_indicators(symbol)
 
+        rsi_label = (
+            "(Overbought)"
+            if ind.rsi > 70
+            else "(Oversold)"
+            if ind.rsi < 30
+            else "(Neutral)"
+        )
+        macd_label = "(Bullish)" if ind.macd.histogram > 0 else "(Bearish)"
+        bb_label = (
+            "(Above upper)"
+            if ind.bollinger.percent_b > 1
+            else "(Below lower)"
+            if ind.bollinger.percent_b < 0
+            else ""
+        )
+        trend_label = (
+            "Bullish (EMA9 > EMA21)"
+            if ind.ema_9 > ind.ema_21
+            else "Bearish (EMA9 < EMA21)"
+        )
+
         return f"""
 Technical Indicators for {symbol}:
 ================================
 VWAP: ${ind.vwap:.2f}
-RSI (14): {ind.rsi:.1f} {'(Overbought)' if ind.rsi > 70 else '(Oversold)' if ind.rsi < 30 else '(Neutral)'}
+RSI (14): {ind.rsi:.1f} {rsi_label}
 
 MACD:
   - MACD Line: {ind.macd.macd_line:.4f}
   - Signal Line: {ind.macd.signal_line:.4f}
-  - Histogram: {ind.macd.histogram:.4f} {'(Bullish)' if ind.macd.histogram > 0 else '(Bearish)'}
+  - Histogram: {ind.macd.histogram:.4f} {macd_label}
 
 Bollinger Bands (20, 2):
   - Upper: ${ind.bollinger.upper:.2f}
   - Middle: ${ind.bollinger.middle:.2f}
   - Lower: ${ind.bollinger.lower:.2f}
-  - %B: {ind.bollinger.percent_b:.2f} {'(Above upper)' if ind.bollinger.percent_b > 1 else '(Below lower)' if ind.bollinger.percent_b < 0 else ''}
+  - %B: {ind.bollinger.percent_b:.2f} {bb_label}
 
 ATR (14): ${ind.atr:.2f}
 
@@ -231,7 +262,7 @@ Moving Averages:
   - EMA 21: ${ind.ema_21:.2f}
   - SMA 50: ${ind.sma_50:.2f}
   - SMA 200: ${ind.sma_200:.2f}
-  - Trend: {'Bullish (EMA9 > EMA21)' if ind.ema_9 > ind.ema_21 else 'Bearish (EMA9 < EMA21)'}
+  - Trend: {trend_label}
 
 Stochastic (14, 3):
   - %K: {ind.stochastic_k:.1f}

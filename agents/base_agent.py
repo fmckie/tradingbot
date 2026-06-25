@@ -1,10 +1,11 @@
 """Base class for AI trading agents."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
 from enum import Enum
+from typing import Any, cast
 
 from config.settings import LEARNING_ENABLED, MAX_LEARNINGS_PER_RECALL
 
@@ -34,14 +35,18 @@ class MarketContext:
     """Market context provided to AI for decision making."""
 
     timestamp: datetime
-    symbols: dict[str, dict]  # Price and indicator data per symbol
-    account: dict  # Account balance, equity, etc.
-    positions: list[dict]  # Current open positions
-    recent_trades: list[dict]  # Recent trade history
+    symbols: dict[str, dict[str, Any]]  # Price and indicator data per symbol
+    account: dict[str, Any]  # Account balance, equity, etc.
+    positions: list[dict[str, Any]]  # Current open positions
+    recent_trades: list[dict[str, Any]]  # Recent trade history
     market_condition: str  # Overall market assessment
     # News data (optional - defaults to empty)
-    news: dict[str, list[dict]] = field(default_factory=dict)  # News articles per symbol
-    news_sentiment: dict[str, dict] = field(default_factory=dict)  # Sentiment summary per symbol
+    news: dict[str, list[dict[str, Any]]] = field(
+        default_factory=dict
+    )  # News articles per symbol
+    news_sentiment: dict[str, dict[str, Any]] = field(
+        default_factory=dict
+    )  # Sentiment summary per symbol
 
 
 @dataclass
@@ -50,16 +55,16 @@ class TradingDecision:
 
     timestamp: datetime
     action: ActionType
-    symbol: Optional[str] = None
-    quantity: Optional[int] = None
+    symbol: str | None = None
+    quantity: int | None = None
     order_type: str = "market"
-    limit_price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    take_profit: Optional[float] = None
+    limit_price: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
     strategy_used: StrategyType = StrategyType.DEFENSIVE
     reasoning: str = ""
     confidence: float = 0.5  # 0-1 confidence score
-    tool_calls: list[dict] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -71,7 +76,7 @@ class AgentState:
     winning_trades: int = 0
     losing_trades: int = 0
     strategies_used: dict[str, int] = field(default_factory=dict)
-    last_decision_time: Optional[datetime] = None
+    last_decision_time: datetime | None = None
     consecutive_losses: int = 0
     peak_equity: float = 100_000.0
     current_drawdown: float = 0.0
@@ -85,7 +90,7 @@ class BaseTradingAgent(ABC):
     The interface is identical - only the AI decision-making differs.
     """
 
-    def __init__(self, name: str, tools: dict):
+    def __init__(self, name: str, tools: dict[str, Any]):
         """
         Initialize the trading agent.
 
@@ -127,16 +132,21 @@ class BaseTradingAgent(ABC):
         """
         pass
 
-    def execute_tool(self, tool_name: str, parameters: dict) -> dict[str, Any]:
+    def execute_tool(
+        self, tool_name: str, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
         """Execute a tool and return results."""
         tool_category = self._get_tool_category(tool_name)
 
         if tool_category and tool_category in self.tools:
-            return self.tools[tool_category].execute(tool_name, parameters)
+            return cast(
+                dict[str, Any],
+                self.tools[tool_category].execute(tool_name, parameters),
+            )
 
         return {"error": f"Tool {tool_name} not found"}
 
-    def _get_tool_category(self, tool_name: str) -> Optional[str]:
+    def _get_tool_category(self, tool_name: str) -> str | None:
         """Map tool name to its category."""
         market_tools = [
             "get_stock_price",
@@ -175,7 +185,7 @@ class BaseTradingAgent(ABC):
 
         return None
 
-    def record_decision(self, decision: TradingDecision):
+    def record_decision(self, decision: TradingDecision) -> None:
         """Record a decision for history and analysis."""
         self.decision_history.append(decision)
         self.state.last_decision_time = decision.timestamp
@@ -186,7 +196,7 @@ class BaseTradingAgent(ABC):
             self.state.strategies_used.get(strategy_name, 0) + 1
         )
 
-    def record_trade_result(self, profit: float):
+    def record_trade_result(self, profit: float) -> None:
         """Record the result of a completed trade."""
         self.state.total_trades += 1
 
@@ -197,7 +207,7 @@ class BaseTradingAgent(ABC):
             self.state.losing_trades += 1
             self.state.consecutive_losses += 1
 
-    def update_equity(self, current_equity: float):
+    def update_equity(self, current_equity: float) -> None:
         """Update peak equity and drawdown tracking."""
         if current_equity > self.state.peak_equity:
             self.state.peak_equity = current_equity
@@ -218,9 +228,11 @@ class BaseTradingAgent(ABC):
         """Get the most frequently used strategy."""
         if not self.state.strategies_used:
             return "none"
-        return max(self.state.strategies_used, key=lambda k: self.state.strategies_used[k])
+        return max(
+            self.state.strategies_used, key=lambda k: self.state.strategies_used[k]
+        )
 
-    def get_performance_summary(self) -> dict:
+    def get_performance_summary(self) -> dict[str, Any]:
         """Get agent performance summary."""
         return {
             "agent": self.name,
@@ -247,32 +259,29 @@ class BaseTradingAgent(ABC):
             return ""
 
         try:
-            from database.learning_store import LearningStore, Learning
+            from database.learning_store import Learning, LearningStore
 
             learnings: list[Learning] = []
 
             # 1. Get learnings matching current market regime
-            regime = context.market_condition.split(" - ")[0].lower()  # "bullish", "bearish", "mixed"
+            regime = context.market_condition.split(" - ")[
+                0
+            ].lower()  # "bullish", "bearish", "mixed"
             regime_learnings = await LearningStore.get_learnings_by_tags(
-                agent_name=self.name,
-                tags=[regime],
-                limit=3
+                agent_name=self.name, tags=[regime], limit=3
             )
             learnings.extend(regime_learnings)
 
             # 2. Get learnings matching symbols we're looking at
             symbols = list(context.symbols.keys())
             symbol_learnings = await LearningStore.get_learnings_by_tags(
-                agent_name=self.name,
-                tags=symbols,
-                limit=3
+                agent_name=self.name, tags=symbols, limit=3
             )
             learnings.extend(symbol_learnings)
 
             # 3. Get top performing learnings
             top_learnings = await LearningStore.get_top_learnings(
-                agent_name=self.name,
-                limit=4
+                agent_name=self.name, limit=4
             )
             learnings.extend(top_learnings)
 
@@ -293,12 +302,17 @@ class BaseTradingAgent(ABC):
             formatted = "\n\nPAST LEARNINGS (from your previous trading experience):\n"
             for i, learning in enumerate(unique_learnings, 1):
                 success_rate = learning.success_rate
-                formatted += f"""
-{i}. [{learning.category.upper()}] {learning.pattern}
-   Insight: {learning.insight}
-   Track record: {learning.success_count} wins, {learning.failure_count} losses ({success_rate:.0f}% success)
-"""
-            formatted += "\nConsider these learnings when making your decision, but don't be rigidly bound by them if current conditions differ."
+                formatted += (
+                    f"\n{i}. [{learning.category.upper()}] {learning.pattern}\n"
+                    f"   Insight: {learning.insight}\n"
+                    f"   Track record: {learning.success_count} wins, "
+                    f"{learning.failure_count} losses "
+                    f"({success_rate:.0f}% success)\n"
+                )
+            formatted += (
+                "\nConsider these learnings when making your decision, but don't be "
+                "rigidly bound by them if current conditions differ."
+            )
             return formatted
 
         except ImportError:
@@ -318,8 +332,7 @@ class BaseTradingAgent(ABC):
             from database.learning_store import LearningStore
 
             episodes = await LearningStore.get_recent_episodes(
-                agent_name=self.name,
-                limit=limit
+                agent_name=self.name, limit=limit
             )
 
             if not episodes:
@@ -352,11 +365,11 @@ class BaseTradingAgent(ABC):
     async def generate_reflection(
         self,
         episode_id: int,
-        decision_made: dict,
-        market_context: dict,
+        decision_made: dict[str, Any],
+        market_context: dict[str, Any],
         outcome_pnl: float,
-        outcome_status: str
-    ) -> dict:
+        outcome_status: str,
+    ) -> dict[str, Any]:
         """
         Generate a reflection on a trade outcome.
 
@@ -364,6 +377,7 @@ class BaseTradingAgent(ABC):
         Each agent (Claude/Grok) implements this with their own AI.
 
         Returns:
-            dict with keys: what_worked, what_failed, lesson_learned, next_time_will, tags
+            dict with keys: what_worked, what_failed, lesson_learned,
+            next_time_will, tags
         """
         pass

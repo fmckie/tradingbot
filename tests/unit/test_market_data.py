@@ -8,16 +8,17 @@ Tests cover:
 - Recent trades retrieval
 - Error handling
 """
-import pytest
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch
+
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
+from unittest.mock import Mock
+
+import numpy as np
+import pandas as pd
+import pytest
 
 from data.market_data import MarketDataProvider, Quote, Snapshot
-from config.settings import SYMBOLS
-
 
 # ==================== Mock Alpaca Response Classes ====================
 
@@ -25,6 +26,7 @@ from config.settings import SYMBOLS
 @dataclass
 class MockAlpacaQuote:
     """Mock Alpaca quote response."""
+
     bid_price: float
     ask_price: float
     bid_size: int
@@ -35,15 +37,17 @@ class MockAlpacaQuote:
 @dataclass
 class MockAlpacaTrade:
     """Mock Alpaca trade response."""
+
     price: float
     size: int
     timestamp: datetime
-    conditions: list
+    conditions: list[Any]
 
 
 @dataclass
 class MockAlpacaBar:
     """Mock Alpaca bar response."""
+
     open: float
     high: float
     low: float
@@ -55,6 +59,7 @@ class MockAlpacaBar:
 @dataclass
 class MockAlpacaSnapshot:
     """Mock Alpaca snapshot response."""
+
     latest_trade: MockAlpacaTrade | None = None
     latest_quote: MockAlpacaQuote | None = None
     daily_bar: MockAlpacaBar | None = None
@@ -83,18 +88,20 @@ def sample_bars_response():
     np.random.seed(42)
     close_prices = 100 + np.cumsum(np.random.randn(100) * 0.5)
 
-    df = pd.DataFrame({
-        "open": close_prices - np.random.rand(100) * 0.5,
-        "high": close_prices + np.random.rand(100) * 1.0,
-        "low": close_prices - np.random.rand(100) * 1.0,
-        "close": close_prices,
-        "volume": np.random.randint(10000, 100000, 100),
-    })
+    df = pd.DataFrame(
+        {
+            "open": close_prices - np.random.rand(100) * 0.5,
+            "high": close_prices + np.random.rand(100) * 1.0,
+            "low": close_prices - np.random.rand(100) * 1.0,
+            "close": close_prices,
+            "volume": np.random.randint(10000, 100000, 100),
+        }
+    )
 
     # Create MultiIndex like Alpaca returns
     df.index = pd.MultiIndex.from_tuples(
-        [(symbol, date) for symbol, date in zip(["GOOGL"] * 100, dates)],
-        names=["symbol", "timestamp"]
+        [(symbol, date) for symbol, date in zip(["GOOGL"] * 100, dates, strict=False)],
+        names=["symbol", "timestamp"],
     )
 
     return df
@@ -107,17 +114,18 @@ def sample_multiindex_bars():
     np.random.seed(42)
     close_prices = 150 + np.cumsum(np.random.randn(50) * 0.5)
 
-    df = pd.DataFrame({
-        "open": close_prices - np.random.rand(50) * 0.5,
-        "high": close_prices + np.random.rand(50) * 1.0,
-        "low": close_prices - np.random.rand(50) * 1.0,
-        "close": close_prices,
-        "volume": np.random.randint(10000, 100000, 50),
-    })
+    df = pd.DataFrame(
+        {
+            "open": close_prices - np.random.rand(50) * 0.5,
+            "high": close_prices + np.random.rand(50) * 1.0,
+            "low": close_prices - np.random.rand(50) * 1.0,
+            "close": close_prices,
+            "volume": np.random.randint(10000, 100000, 50),
+        }
+    )
 
     df.index = pd.MultiIndex.from_tuples(
-        [("GOOGL", date) for date in dates],
-        names=["symbol", "timestamp"]
+        [("GOOGL", date) for date in dates], names=["symbol", "timestamp"]
     )
 
     return df
@@ -209,7 +217,9 @@ class TestSymbolValidation:
 
         assert "not allowed" in str(exc_info.value)
 
-    def test_valid_symbol_googl_accepted(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_valid_symbol_googl_accepted(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """GOOGL should be accepted."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -219,14 +229,15 @@ class TestSymbolValidation:
         result = market_data_provider.get_bars("GOOGL")
         assert not result.empty
 
-    def test_valid_symbol_tsla_accepted(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_valid_symbol_tsla_accepted(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """TSLA should be accepted."""
         # Modify mock for TSLA
         dates = pd.date_range(start="2024-01-01", periods=50, freq="h")
         df = sample_multiindex_bars.copy()
         df.index = pd.MultiIndex.from_tuples(
-            [("TSLA", date) for date in dates],
-            names=["symbol", "timestamp"]
+            [("TSLA", date) for date in dates], names=["symbol", "timestamp"]
         )
 
         mock_response = Mock()
@@ -243,7 +254,9 @@ class TestSymbolValidation:
 class TestGetBars:
     """Test get_bars method."""
 
-    def test_get_bars_returns_dataframe(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_returns_dataframe(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Should return a pandas DataFrame."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -253,7 +266,9 @@ class TestGetBars:
 
         assert isinstance(result, pd.DataFrame)
 
-    def test_get_bars_handles_multiindex(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_handles_multiindex(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Should handle MultiIndex DataFrame from Alpaca."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -275,7 +290,9 @@ class TestGetBars:
         assert result.empty
         assert "close" in result.columns or len(result.columns) >= 0
 
-    def test_get_bars_column_names_lowercase(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_column_names_lowercase(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Column names should be lowercase."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -286,7 +303,9 @@ class TestGetBars:
         for col in result.columns:
             assert col == col.lower()
 
-    def test_get_bars_respects_limit(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_respects_limit(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Should respect limit parameter."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -303,7 +322,9 @@ class TestGetBars:
 
         assert "Invalid timeframe" in str(exc_info.value)
 
-    def test_get_bars_valid_timeframes(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_valid_timeframes(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Should accept valid timeframes."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -315,22 +336,25 @@ class TestGetBars:
             result = market_data_provider.get_bars("GOOGL", timeframe=tf)
             assert isinstance(result, pd.DataFrame)
 
-    def test_get_bars_multiindex_without_symbol_level(self, market_data_provider, mock_alpaca_client):
+    def test_get_bars_multiindex_without_symbol_level(
+        self, market_data_provider, mock_alpaca_client
+    ):
         """Should handle MultiIndex without named symbol level."""
         dates = pd.date_range(start="2024-01-01", periods=50, freq="h")
 
-        df = pd.DataFrame({
-            "open": [100.0] * 50,
-            "high": [101.0] * 50,
-            "low": [99.0] * 50,
-            "close": [100.0] * 50,
-            "volume": [10000] * 50,
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100.0] * 50,
+                "high": [101.0] * 50,
+                "low": [99.0] * 50,
+                "close": [100.0] * 50,
+                "volume": [10000] * 50,
+            }
+        )
 
         # MultiIndex without 'symbol' name
         df.index = pd.MultiIndex.from_tuples(
-            [(0, date) for date in dates],
-            names=[None, "timestamp"]
+            [(0, date) for date in dates], names=[None, "timestamp"]
         )
 
         mock_response = Mock()
@@ -348,7 +372,9 @@ class TestGetBars:
 class TestGetCurrentQuote:
     """Test get_current_quote method."""
 
-    def test_get_quote_returns_quote_object(self, market_data_provider, mock_alpaca_client, sample_quote, sample_trade):
+    def test_get_quote_returns_quote_object(
+        self, market_data_provider, mock_alpaca_client, sample_quote, sample_trade
+    ):
         """Should return Quote dataclass."""
         mock_alpaca_client.get_stock_latest_quote.return_value = {"GOOGL": sample_quote}
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": [sample_trade]}
@@ -357,7 +383,9 @@ class TestGetCurrentQuote:
 
         assert isinstance(result, Quote)
 
-    def test_get_quote_has_all_fields(self, market_data_provider, mock_alpaca_client, sample_quote, sample_trade):
+    def test_get_quote_has_all_fields(
+        self, market_data_provider, mock_alpaca_client, sample_quote, sample_trade
+    ):
         """Quote should have all required fields."""
         mock_alpaca_client.get_stock_latest_quote.return_value = {"GOOGL": sample_quote}
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": [sample_trade]}
@@ -371,7 +399,9 @@ class TestGetCurrentQuote:
         assert result.ask_size == sample_quote.ask_size
         assert result.last_price == sample_trade.price
 
-    def test_get_quote_uses_ask_when_no_trades(self, market_data_provider, mock_alpaca_client, sample_quote):
+    def test_get_quote_uses_ask_when_no_trades(
+        self, market_data_provider, mock_alpaca_client, sample_quote
+    ):
         """Should use ask price as last price when no trades."""
         mock_alpaca_client.get_stock_latest_quote.return_value = {"GOOGL": sample_quote}
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": []}
@@ -380,7 +410,9 @@ class TestGetCurrentQuote:
 
         assert result.last_price == sample_quote.ask_price
 
-    def test_get_quote_converts_to_float(self, market_data_provider, mock_alpaca_client, sample_quote, sample_trade):
+    def test_get_quote_converts_to_float(
+        self, market_data_provider, mock_alpaca_client, sample_quote, sample_trade
+    ):
         """Prices should be converted to float."""
         mock_alpaca_client.get_stock_latest_quote.return_value = {"GOOGL": sample_quote}
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": [sample_trade]}
@@ -398,7 +430,9 @@ class TestGetCurrentQuote:
 class TestGetSnapshot:
     """Test get_snapshot method."""
 
-    def test_get_snapshot_returns_snapshot_object(self, market_data_provider, mock_alpaca_client, sample_snapshot):
+    def test_get_snapshot_returns_snapshot_object(
+        self, market_data_provider, mock_alpaca_client, sample_snapshot
+    ):
         """Should return Snapshot dataclass."""
         mock_alpaca_client.get_stock_snapshot.return_value = {"GOOGL": sample_snapshot}
 
@@ -406,7 +440,9 @@ class TestGetSnapshot:
 
         assert isinstance(result, Snapshot)
 
-    def test_get_snapshot_has_all_fields(self, market_data_provider, mock_alpaca_client, sample_snapshot):
+    def test_get_snapshot_has_all_fields(
+        self, market_data_provider, mock_alpaca_client, sample_snapshot
+    ):
         """Snapshot should have all required fields."""
         mock_alpaca_client.get_stock_snapshot.return_value = {"GOOGL": sample_snapshot}
 
@@ -424,7 +460,9 @@ class TestGetSnapshot:
         assert result.daily_bar_volume == sample_snapshot.daily_bar.volume
         assert result.prev_daily_bar_close == sample_snapshot.previous_daily_bar.close
 
-    def test_get_snapshot_handles_missing_trade(self, market_data_provider, mock_alpaca_client, sample_quote):
+    def test_get_snapshot_handles_missing_trade(
+        self, market_data_provider, mock_alpaca_client, sample_quote
+    ):
         """Should handle missing latest trade."""
         snapshot = MockAlpacaSnapshot(
             latest_trade=None,
@@ -439,7 +477,9 @@ class TestGetSnapshot:
         assert result.latest_trade_price == 0.0
         assert result.latest_trade_size == 0
 
-    def test_get_snapshot_handles_missing_quote(self, market_data_provider, mock_alpaca_client, sample_trade):
+    def test_get_snapshot_handles_missing_quote(
+        self, market_data_provider, mock_alpaca_client, sample_trade
+    ):
         """Should handle missing latest quote."""
         snapshot = MockAlpacaSnapshot(
             latest_trade=sample_trade,
@@ -454,7 +494,9 @@ class TestGetSnapshot:
         assert result.latest_quote_bid == 0.0
         assert result.latest_quote_ask == 0.0
 
-    def test_get_snapshot_handles_missing_daily_bar(self, market_data_provider, mock_alpaca_client, sample_trade, sample_quote):
+    def test_get_snapshot_handles_missing_daily_bar(
+        self, market_data_provider, mock_alpaca_client, sample_trade, sample_quote
+    ):
         """Should handle missing daily bar."""
         snapshot = MockAlpacaSnapshot(
             latest_trade=sample_trade,
@@ -470,7 +512,9 @@ class TestGetSnapshot:
         assert result.daily_bar_close == 0.0
         assert result.daily_bar_volume == 0
 
-    def test_get_snapshot_handles_missing_prev_daily_bar(self, market_data_provider, mock_alpaca_client, sample_snapshot):
+    def test_get_snapshot_handles_missing_prev_daily_bar(
+        self, market_data_provider, mock_alpaca_client, sample_snapshot
+    ):
         """Should handle missing previous daily bar."""
         sample_snapshot.previous_daily_bar = None
         mock_alpaca_client.get_stock_snapshot.return_value = {"GOOGL": sample_snapshot}
@@ -486,8 +530,11 @@ class TestGetSnapshot:
 class TestGetAllSnapshots:
     """Test get_all_snapshots method."""
 
-    def test_get_all_snapshots_returns_dict(self, market_data_provider, mock_alpaca_client, sample_snapshot):
+    def test_get_all_snapshots_returns_dict(
+        self, market_data_provider, mock_alpaca_client, sample_snapshot
+    ):
         """Should return dictionary of snapshots."""
+
         # Mock to return snapshots for each symbol call
         def mock_get_snapshot(request):
             # The request contains the symbol
@@ -499,8 +546,11 @@ class TestGetAllSnapshots:
 
         assert isinstance(result, dict)
 
-    def test_get_all_snapshots_includes_all_symbols(self, market_data_provider, mock_alpaca_client, sample_snapshot):
+    def test_get_all_snapshots_includes_all_symbols(
+        self, market_data_provider, mock_alpaca_client, sample_snapshot
+    ):
         """Should include snapshot for each symbol."""
+
         # Mock to return snapshot for each call
         def mock_get_snapshot(request):
             return {request.symbol_or_symbols: sample_snapshot}
@@ -519,7 +569,9 @@ class TestGetAllSnapshots:
 class TestGetRecentTrades:
     """Test get_recent_trades method."""
 
-    def test_get_recent_trades_returns_list(self, market_data_provider, mock_alpaca_client, sample_trade):
+    def test_get_recent_trades_returns_list(
+        self, market_data_provider, mock_alpaca_client, sample_trade
+    ):
         """Should return list of trade dicts."""
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": [sample_trade]}
 
@@ -527,7 +579,9 @@ class TestGetRecentTrades:
 
         assert isinstance(result, list)
 
-    def test_get_recent_trades_has_expected_fields(self, market_data_provider, mock_alpaca_client, sample_trade):
+    def test_get_recent_trades_has_expected_fields(
+        self, market_data_provider, mock_alpaca_client, sample_trade
+    ):
         """Trade dicts should have expected fields."""
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": [sample_trade]}
 
@@ -540,7 +594,9 @@ class TestGetRecentTrades:
         assert "timestamp" in trade
         assert "conditions" in trade
 
-    def test_get_recent_trades_converts_types(self, market_data_provider, mock_alpaca_client, sample_trade):
+    def test_get_recent_trades_converts_types(
+        self, market_data_provider, mock_alpaca_client, sample_trade
+    ):
         """Values should be converted to correct types."""
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": [sample_trade]}
 
@@ -550,7 +606,9 @@ class TestGetRecentTrades:
         assert isinstance(trade["price"], float)
         assert isinstance(trade["size"], int)
 
-    def test_get_recent_trades_default_limit(self, market_data_provider, mock_alpaca_client):
+    def test_get_recent_trades_default_limit(
+        self, market_data_provider, mock_alpaca_client
+    ):
         """Should use default limit of 50."""
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": []}
 
@@ -561,7 +619,9 @@ class TestGetRecentTrades:
         request = call_args[0][0]
         assert request.limit == 50
 
-    def test_get_recent_trades_custom_limit(self, market_data_provider, mock_alpaca_client):
+    def test_get_recent_trades_custom_limit(
+        self, market_data_provider, mock_alpaca_client
+    ):
         """Should use custom limit."""
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": []}
 
@@ -571,12 +631,20 @@ class TestGetRecentTrades:
         request = call_args[0][0]
         assert request.limit == 100
 
-    def test_get_recent_trades_multiple_trades(self, market_data_provider, mock_alpaca_client):
+    def test_get_recent_trades_multiple_trades(
+        self, market_data_provider, mock_alpaca_client
+    ):
         """Should return multiple trades."""
         trades = [
-            MockAlpacaTrade(price=150.00, size=100, timestamp=datetime.now(), conditions=["@"]),
-            MockAlpacaTrade(price=150.10, size=50, timestamp=datetime.now(), conditions=["@"]),
-            MockAlpacaTrade(price=149.90, size=75, timestamp=datetime.now(), conditions=["@"]),
+            MockAlpacaTrade(
+                price=150.00, size=100, timestamp=datetime.now(), conditions=["@"]
+            ),
+            MockAlpacaTrade(
+                price=150.10, size=50, timestamp=datetime.now(), conditions=["@"]
+            ),
+            MockAlpacaTrade(
+                price=149.90, size=75, timestamp=datetime.now(), conditions=["@"]
+            ),
         ]
         mock_alpaca_client.get_stock_trades.return_value = {"GOOGL": trades}
 
@@ -656,7 +724,9 @@ class TestSnapshotDataclass:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_get_bars_with_custom_start_end(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_with_custom_start_end(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Should accept custom start and end dates."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars
@@ -669,7 +739,9 @@ class TestEdgeCases:
 
         assert isinstance(result, pd.DataFrame)
 
-    def test_get_bars_default_dates(self, market_data_provider, mock_alpaca_client, sample_multiindex_bars):
+    def test_get_bars_default_dates(
+        self, market_data_provider, mock_alpaca_client, sample_multiindex_bars
+    ):
         """Should calculate default dates when not provided."""
         mock_response = Mock()
         mock_response.df = sample_multiindex_bars

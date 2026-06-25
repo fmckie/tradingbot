@@ -1,17 +1,19 @@
 """Real-time market data provider using Alpaca API."""
-import pandas as pd
-from datetime import datetime, timedelta
-from typing import Optional
+
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
+
+import pandas as pd
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import (
     StockBarsRequest,
     StockLatestQuoteRequest,
-    StockTradesRequest,
     StockSnapshotRequest,
+    StockTradesRequest,
 )
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-from alpaca.data.enums import DataFeed
 
 from config.settings import SYMBOLS
 
@@ -94,8 +96,8 @@ class MarketDataProvider:
         symbol: str,
         timeframe: str = "1Hour",
         limit: int = 100,
-        start: Optional[datetime] = None,
-        end: Optional[datetime] = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
     ) -> pd.DataFrame:
         """Get OHLCV bars for a symbol."""
         if symbol not in SYMBOLS:
@@ -115,7 +117,9 @@ class MarketDataProvider:
             elif timeframe == "1Hour":
                 start = end - timedelta(hours=limit * 2)
             else:
-                start = end - timedelta(minutes=limit * int(timeframe.replace("Min", "")) * 2)
+                start = end - timedelta(
+                    minutes=limit * int(timeframe.replace("Min", "")) * 2
+                )
 
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
@@ -132,12 +136,16 @@ class MarketDataProvider:
         # on error. Duck-type on .df rather than isinstance(BarSet) so the parser
         # is exercised under test and any error shape degrades to an empty frame.
         if not hasattr(bars, "df"):
-            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+            return pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
+            )
         df = bars.df
 
         # Handle empty DataFrame
         if df.empty:
-            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+            return pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
+            )
 
         # Handle MultiIndex: check if 'symbol' is a valid level name
         if isinstance(df.index, pd.MultiIndex):
@@ -168,10 +176,16 @@ class MarketDataProvider:
 
         return Snapshot(
             symbol=symbol,
-            latest_trade_price=float(snap.latest_trade.price) if snap.latest_trade else 0.0,
+            latest_trade_price=float(snap.latest_trade.price)
+            if snap.latest_trade
+            else 0.0,
             latest_trade_size=int(snap.latest_trade.size) if snap.latest_trade else 0,
-            latest_quote_bid=float(snap.latest_quote.bid_price) if snap.latest_quote else 0.0,
-            latest_quote_ask=float(snap.latest_quote.ask_price) if snap.latest_quote else 0.0,
+            latest_quote_bid=float(snap.latest_quote.bid_price)
+            if snap.latest_quote
+            else 0.0,
+            latest_quote_ask=float(snap.latest_quote.ask_price)
+            if snap.latest_quote
+            else 0.0,
             daily_bar_open=float(snap.daily_bar.open) if snap.daily_bar else 0.0,
             daily_bar_high=float(snap.daily_bar.high) if snap.daily_bar else 0.0,
             daily_bar_low=float(snap.daily_bar.low) if snap.daily_bar else 0.0,
@@ -180,14 +194,16 @@ class MarketDataProvider:
             prev_daily_bar_close=float(snap.previous_daily_bar.close)
             if snap.previous_daily_bar
             else 0.0,
-            timestamp=snap.latest_trade.timestamp if snap.latest_trade else datetime.now(),
+            timestamp=snap.latest_trade.timestamp
+            if snap.latest_trade
+            else datetime.now(),
         )
 
     def get_all_snapshots(self) -> dict[str, Snapshot]:
         """Get snapshots for all allowed symbols."""
         return {symbol: self.get_snapshot(symbol) for symbol in SYMBOLS}
 
-    def get_recent_trades(self, symbol: str, limit: int = 50) -> list[dict]:
+    def get_recent_trades(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent trades for a symbol."""
         if symbol not in SYMBOLS:
             raise ValueError(f"Symbol {symbol} not allowed. Only {SYMBOLS} permitted.")

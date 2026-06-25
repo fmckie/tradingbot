@@ -4,19 +4,22 @@ Comprehensive tests for OrderExecutor execution logic.
 Tests the execute_decision() method and related order handling
 with mocked Alpaca API client.
 """
-import pytest
-from datetime import datetime
-from unittest.mock import MagicMock, patch, AsyncMock
+
 from dataclasses import dataclass
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from agents.base_agent import ActionType, StrategyType, TradingDecision
-from execution.order_executor import OrderExecutor, ExecutionResult
+from execution.order_executor import ExecutionResult, OrderExecutor
 from risk.risk_manager import RiskManager, RiskValidationResult
 
 
 @dataclass
 class MockOrder:
     """Mock Alpaca order object."""
+
     id: str = "order-123"
     symbol: str = "GOOGL"
     _side: str = "buy"
@@ -58,6 +61,7 @@ class MockOrder:
 @dataclass
 class MockPosition:
     """Mock Alpaca position object."""
+
     symbol: str = "GOOGL"
     qty: str = "10"
     market_value: str = "1850.00"
@@ -98,7 +102,7 @@ class TestOrderExecutorExecuteDecision:
         return OrderExecutor(
             trading_client=mock_trading_client,
             risk_manager=mock_risk_manager,
-            agent_name="test_agent"
+            agent_name="test_agent",
         )
 
     @pytest.fixture
@@ -109,11 +113,11 @@ class TestOrderExecutorExecuteDecision:
     def _make_decision(
         self,
         action: ActionType = ActionType.BUY,
-        symbol: str = "GOOGL",
+        symbol: str | None = "GOOGL",
         quantity: int = 10,
         stop_loss: float | None = 175.00,
         take_profit: float | None = None,
-        timestamp: datetime | None = None
+        timestamp: datetime | None = None,
     ) -> TradingDecision:
         """Helper to create TradingDecision."""
         if timestamp is None:
@@ -126,7 +130,7 @@ class TestOrderExecutorExecuteDecision:
             stop_loss=stop_loss,
             take_profit=take_profit,
             strategy_used=StrategyType.MOMENTUM,
-            reasoning="Test decision"
+            reasoning="Test decision",
         )
 
     # ==================== HOLD ACTION TESTS ====================
@@ -144,7 +148,9 @@ class TestOrderExecutorExecuteDecision:
         executor.client.submit_order.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_hold_action_bypasses_order_placement(self, executor, mock_trading_client):
+    async def test_hold_action_bypasses_order_placement(
+        self, executor, mock_trading_client
+    ):
         """Test HOLD doesn't call submit_order."""
         decision = self._make_decision(action=ActionType.HOLD)
 
@@ -164,7 +170,9 @@ class TestOrderExecutorExecuteDecision:
     # ==================== CLOSE ACTION TESTS ====================
 
     @pytest.mark.asyncio
-    async def test_close_action_closes_existing_position(self, executor, mock_trading_client):
+    async def test_close_action_closes_existing_position(
+        self, executor, mock_trading_client
+    ):
         """Test CLOSE action closes an existing position."""
         # Setup position
         position = MockPosition(symbol="GOOGL", qty="15")
@@ -256,10 +264,7 @@ class TestOrderExecutorExecuteDecision:
         mock_trading_client.submit_order.return_value = mock_order
 
         decision = self._make_decision(
-            action=ActionType.BUY,
-            symbol="GOOGL",
-            quantity=10,
-            stop_loss=175.00
+            action=ActionType.BUY, symbol="GOOGL", quantity=10, stop_loss=175.00
         )
 
         result = await executor.execute_decision(decision, current_price=185.00)
@@ -280,7 +285,7 @@ class TestOrderExecutorExecuteDecision:
             symbol="GOOGL",
             quantity=10,
             stop_loss=175.00,
-            take_profit=None
+            take_profit=None,
         )
 
         result = await executor.execute_decision(decision, current_price=185.00)
@@ -290,7 +295,7 @@ class TestOrderExecutorExecuteDecision:
         call_args = mock_trading_client.submit_order.call_args
         order_request = call_args[0][0]
         # The request should have stop_loss
-        assert hasattr(order_request, 'stop_loss') or 'stop_loss' in str(order_request)
+        assert hasattr(order_request, "stop_loss") or "stop_loss" in str(order_request)
 
     @pytest.mark.asyncio
     async def test_buy_with_bracket_order(self, executor, mock_trading_client):
@@ -304,7 +309,7 @@ class TestOrderExecutorExecuteDecision:
             symbol="GOOGL",
             quantity=10,
             stop_loss=175.00,
-            take_profit=200.00
+            take_profit=200.00,
         )
 
         result = await executor.execute_decision(decision, current_price=185.00)
@@ -314,7 +319,9 @@ class TestOrderExecutorExecuteDecision:
         # Verify bracket order was submitted
         call_args = mock_trading_client.submit_order.call_args
         order_request = call_args[0][0]
-        assert hasattr(order_request, 'take_profit') or 'take_profit' in str(order_request)
+        assert hasattr(order_request, "take_profit") or "take_profit" in str(
+            order_request
+        )
 
     @pytest.mark.asyncio
     async def test_buy_reports_filled_quantity(self, executor, mock_trading_client):
@@ -324,9 +331,7 @@ class TestOrderExecutorExecuteDecision:
         mock_trading_client.submit_order.return_value = mock_order
 
         decision = self._make_decision(
-            action=ActionType.BUY,
-            symbol="GOOGL",
-            quantity=15
+            action=ActionType.BUY, symbol="GOOGL", quantity=15
         )
 
         result = await executor.execute_decision(decision, current_price=185.00)
@@ -336,7 +341,9 @@ class TestOrderExecutorExecuteDecision:
     @pytest.mark.asyncio
     async def test_buy_handles_api_error(self, executor, mock_trading_client):
         """Test BUY handles API errors gracefully."""
-        mock_trading_client.submit_order.side_effect = Exception("Insufficient buying power")
+        mock_trading_client.submit_order.side_effect = Exception(
+            "Insufficient buying power"
+        )
 
         decision = self._make_decision(action=ActionType.BUY)
 
@@ -356,10 +363,7 @@ class TestOrderExecutorExecuteDecision:
         mock_trading_client.submit_order.return_value = mock_order
 
         decision = self._make_decision(
-            action=ActionType.SELL,
-            symbol="TSLA",
-            quantity=5,
-            stop_loss=260.00
+            action=ActionType.SELL, symbol="TSLA", quantity=5, stop_loss=260.00
         )
 
         result = await executor.execute_decision(decision, current_price=250.00)
@@ -368,7 +372,9 @@ class TestOrderExecutorExecuteDecision:
         assert result.order_id == "sell-order-123"
 
     @pytest.mark.asyncio
-    async def test_sell_with_stop_loss_and_take_profit(self, executor, mock_trading_client):
+    async def test_sell_with_stop_loss_and_take_profit(
+        self, executor, mock_trading_client
+    ):
         """Test SELL with bracket order."""
         mock_order = MagicMock()
         mock_order.id = "sell-bracket-123"
@@ -379,7 +385,7 @@ class TestOrderExecutorExecuteDecision:
             symbol="TSLA",
             quantity=5,
             stop_loss=260.00,
-            take_profit=230.00
+            take_profit=230.00,
         )
 
         result = await executor.execute_decision(decision, current_price=250.00)
@@ -419,12 +425,14 @@ class TestOrderExecutorExecuteDecision:
         assert "Trading blocked" in result.message
 
     @pytest.mark.asyncio
-    async def test_risk_validation_failure_blocks_trade(self, executor, mock_risk_manager):
+    async def test_risk_validation_failure_blocks_trade(
+        self, executor, mock_risk_manager
+    ):
         """Test execution blocked on risk validation failure."""
         mock_risk_manager.validate_decision.return_value = RiskValidationResult(
             valid=False,
             message="Risk too high: 5.00% (max 2%)",
-            violations=["Risk too high"]
+            violations=["Risk too high"],
         )
 
         decision = self._make_decision(action=ActionType.BUY)
@@ -441,7 +449,7 @@ class TestOrderExecutorExecuteDecision:
         mock_risk_manager.validate_decision.return_value = RiskValidationResult(
             valid=False,
             message="Stop-loss is REQUIRED for all trades",
-            violations=["Stop-loss is REQUIRED"]
+            violations=["Stop-loss is REQUIRED"],
         )
 
         decision = self._make_decision(action=ActionType.BUY, stop_loss=None)
@@ -454,13 +462,15 @@ class TestOrderExecutorExecuteDecision:
     # ==================== QUANTITY ADJUSTMENT TESTS ====================
 
     @pytest.mark.asyncio
-    async def test_quantity_adjusted_by_risk_manager(self, executor, mock_risk_manager, mock_trading_client):
+    async def test_quantity_adjusted_by_risk_manager(
+        self, executor, mock_risk_manager, mock_trading_client
+    ):
         """Test quantity is adjusted when risk manager returns adjusted_quantity."""
         mock_risk_manager.validate_decision.return_value = RiskValidationResult(
             valid=True,
             message="Quantity adjusted to 5 to meet risk limits",
             adjusted_quantity=5,
-            violations=["Risk adjusted"]
+            violations=["Risk adjusted"],
         )
         mock_order = MagicMock()
         mock_order.id = "adjusted-order-123"
@@ -468,7 +478,7 @@ class TestOrderExecutorExecuteDecision:
 
         decision = self._make_decision(
             action=ActionType.BUY,
-            quantity=20  # Original quantity
+            quantity=20,  # Original quantity
         )
 
         result = await executor.execute_decision(decision, current_price=185.00)
@@ -477,21 +487,18 @@ class TestOrderExecutorExecuteDecision:
         assert result.filled_quantity == 5  # Adjusted quantity
 
     @pytest.mark.asyncio
-    async def test_original_quantity_used_when_no_adjustment(self, executor, mock_risk_manager, mock_trading_client):
+    async def test_original_quantity_used_when_no_adjustment(
+        self, executor, mock_risk_manager, mock_trading_client
+    ):
         """Test original quantity used when no adjustment needed."""
         mock_risk_manager.validate_decision.return_value = RiskValidationResult(
-            valid=True,
-            message="All risk checks passed",
-            adjusted_quantity=None
+            valid=True, message="All risk checks passed", adjusted_quantity=None
         )
         mock_order = MagicMock()
         mock_order.id = "order-123"
         mock_trading_client.submit_order.return_value = mock_order
 
-        decision = self._make_decision(
-            action=ActionType.BUY,
-            quantity=10
-        )
+        decision = self._make_decision(action=ActionType.BUY, quantity=10)
 
         result = await executor.execute_decision(decision, current_price=185.00)
 
@@ -551,7 +558,7 @@ class TestOrderExecutorOpenOrders:
         return OrderExecutor(
             trading_client=mock_trading_client,
             risk_manager=mock_risk_manager,
-            agent_name="test_agent"
+            agent_name="test_agent",
         )
 
     def test_get_open_orders_returns_list(self, executor, mock_trading_client):
@@ -599,14 +606,16 @@ class TestOrderExecutorOpenOrders:
 
         mock_trading_client.get_orders.return_value = [googl_order, aapl_order]
 
-        with patch('execution.order_executor.SYMBOLS', ["GOOGL", "TSLA"]):
+        with patch("execution.order_executor.SYMBOLS", ["GOOGL", "TSLA"]):
             orders = executor.get_open_orders()
 
         # Only GOOGL should be returned
         assert len(orders) == 1
         assert orders[0]["symbol"] == "GOOGL"
 
-    def test_get_open_orders_handles_filled_qty_none(self, executor, mock_trading_client):
+    def test_get_open_orders_handles_filled_qty_none(
+        self, executor, mock_trading_client
+    ):
         """Test get_open_orders handles None filled_qty."""
         mock_order = MagicMock()
         mock_order.id = "order-123"
@@ -644,7 +653,7 @@ class TestOrderExecutorCancelOrders:
         return OrderExecutor(
             trading_client=mock_trading_client,
             risk_manager=mock_risk_manager,
-            agent_name="test_agent"
+            agent_name="test_agent",
         )
 
     def test_cancel_all_orders_calls_api(self, executor, mock_trading_client):
@@ -669,7 +678,7 @@ class TestOrderExecutorCancelOrders:
 
         mock_trading_client.get_orders.return_value = [mock_order]
 
-        with patch('execution.order_executor.SYMBOLS', ["GOOGL", "TSLA"]):
+        with patch("execution.order_executor.SYMBOLS", ["GOOGL", "TSLA"]):
             count = executor.cancel_all_orders()
 
         # Returns the count from get_open_orders
@@ -692,7 +701,7 @@ class TestExecutionResultDataclass:
         decision = TradingDecision(
             timestamp=datetime.now(),
             action=ActionType.HOLD,
-            strategy_used=StrategyType.DEFENSIVE
+            strategy_used=StrategyType.DEFENSIVE,
         )
         risk_result = RiskValidationResult(valid=True, message="OK")
 
@@ -701,7 +710,7 @@ class TestExecutionResultDataclass:
             order_id=None,
             message="Test",
             decision=decision,
-            risk_validation=risk_result
+            risk_validation=risk_result,
         )
 
         assert result.filled_price is None
@@ -715,7 +724,7 @@ class TestExecutionResultDataclass:
             action=ActionType.BUY,
             symbol="GOOGL",
             quantity=10,
-            strategy_used=StrategyType.MOMENTUM
+            strategy_used=StrategyType.MOMENTUM,
         )
         risk_result = RiskValidationResult(valid=True, message="OK")
         ts = datetime(2024, 1, 15, 10, 30, 0)
@@ -728,7 +737,7 @@ class TestExecutionResultDataclass:
             risk_validation=risk_result,
             filled_price=185.50,
             filled_quantity=10,
-            timestamp=ts
+            timestamp=ts,
         )
 
         assert result.success is True

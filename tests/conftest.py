@@ -14,31 +14,30 @@ Usage:
         # Use fixtures in your tests
         ...
 """
+
 import asyncio
-import json
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Optional
-from unittest.mock import MagicMock, AsyncMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 import pytz
 
 # Import trading bot modules
 from agents.base_agent import (
-    BaseTradingAgent,
-    TradingDecision,
-    MarketContext,
     ActionType,
-    StrategyType,
     AgentState,
+    MarketContext,
+    StrategyType,
+    TradingDecision,
 )
-from config.settings import RISK_LIMITS, STARTING_CAPITAL, SYMBOLS
+from config.settings import STARTING_CAPITAL
+from data.market_data import Snapshot
+from execution.order_executor import OrderExecutor
+from monitoring.scoreboard import Scoreboard
 from risk.risk_manager import RiskManager, RiskValidationResult
-from execution.order_executor import OrderExecutor, ExecutionResult
-from monitoring.scoreboard import Scoreboard, AgentScore
-from data.market_data import Quote, Snapshot
-
 
 # Timezone constant
 ET = pytz.timezone("America/New_York")
@@ -52,6 +51,7 @@ ET = pytz.timezone("America/New_York")
 @dataclass
 class MockAccount:
     """Mock Alpaca account."""
+
     equity: str = "100000.00"
     cash: str = "100000.00"
     buying_power: str = "200000.00"
@@ -65,6 +65,7 @@ class MockAccount:
 @dataclass
 class MockPosition:
     """Mock Alpaca position."""
+
     symbol: str = "GOOGL"
     qty: str = "10"
     avg_entry_price: str = "150.00"
@@ -78,6 +79,7 @@ class MockPosition:
 @dataclass
 class MockOrder:
     """Mock Alpaca order."""
+
     id: str = "order-123"
     symbol: str = "GOOGL"
     qty: str = "10"
@@ -85,16 +87,17 @@ class MockOrder:
     side: MagicMock = field(default_factory=lambda: MagicMock(value="buy"))
     type: MagicMock = field(default_factory=lambda: MagicMock(value="market"))
     status: MagicMock = field(default_factory=lambda: MagicMock(value="filled"))
-    limit_price: Optional[str] = None
-    stop_price: Optional[str] = None
+    limit_price: str | None = None
+    stop_price: str | None = None
     filled_avg_price: str = "150.00"
     created_at: datetime = field(default_factory=datetime.now)
-    filled_at: Optional[datetime] = field(default_factory=datetime.now)
+    filled_at: datetime | None = field(default_factory=datetime.now)
 
 
 @dataclass
 class MockQuote:
     """Mock stock quote."""
+
     symbol: str = "GOOGL"
     last_price: float = 150.00
     bid_price: float = 149.95
@@ -107,6 +110,7 @@ class MockQuote:
 @dataclass
 class MockSnapshot:
     """Mock market snapshot."""
+
     symbol: str = "GOOGL"
     latest_trade_price: float = 150.00
     latest_trade_size: int = 100
@@ -188,7 +192,10 @@ def mock_trading_client():
 @pytest.fixture
 def mock_account_with_equity():
     """Factory fixture for creating accounts with specific equity."""
-    def _create(equity: float, cash: float | None = None, last_equity: float | None = None):
+
+    def _create(
+        equity: float, cash: float | None = None, last_equity: float | None = None
+    ):
         return MockAccount(
             equity=str(equity),
             cash=str(cash if cash is not None else equity),
@@ -196,6 +203,7 @@ def mock_account_with_equity():
             portfolio_value=str(equity),
             last_equity=str(last_equity if last_equity is not None else equity),
         )
+
     return _create
 
 
@@ -255,11 +263,12 @@ def mock_account_starting():
 @pytest.fixture
 def mock_position_factory():
     """Factory fixture for creating positions."""
+
     def _create(
         symbol: str = "GOOGL",
         qty: int = 10,
         avg_entry: float = 150.00,
-        current_price: float = 155.00
+        current_price: float = 155.00,
     ):
         market_value = qty * current_price
         unrealized_pl = qty * (current_price - avg_entry)
@@ -274,6 +283,7 @@ def mock_position_factory():
             unrealized_pl=str(unrealized_pl),
             unrealized_plpc=str(unrealized_plpc),
         )
+
     return _create
 
 
@@ -502,9 +512,7 @@ def mock_anthropic_client():
 
     # Default response simulating a HOLD decision
     client.messages.create.return_value = create_anthropic_response(
-        "STRATEGY: Defensive\n"
-        "ACTION: HOLD\n"
-        "REASONING: Market conditions are uncertain."
+        "STRATEGY: Defensive\nACTION: HOLD\nREASONING: Market conditions are uncertain."
     )
 
     # Attach helper for tests to easily change response
@@ -588,7 +596,7 @@ def create_symbol_data(
     bollinger_percent_b: float,
     above_vwap: bool,
     trend: str,
-) -> dict:
+) -> dict[str, Any]:
     """Helper to create symbol data dictionary."""
     return {
         "price": price,
@@ -617,7 +625,7 @@ def create_account_data(
     equity: float,
     cash: float,
     daily_pnl: float,
-) -> dict:
+) -> dict[str, Any]:
     """Helper to create account data dictionary."""
     return {
         "equity": equity,
@@ -625,7 +633,9 @@ def create_account_data(
         "buying_power": cash * 2,
         "portfolio_value": equity,
         "daily_pnl": daily_pnl,
-        "daily_pnl_percent": (daily_pnl / (equity - daily_pnl)) * 100 if (equity - daily_pnl) > 0 else 0,
+        "daily_pnl_percent": (daily_pnl / (equity - daily_pnl)) * 100
+        if (equity - daily_pnl) > 0
+        else 0,
     }
 
 
@@ -922,12 +932,13 @@ def sample_market_context_near_daily_limit(market_time_open) -> MarketContext:
 @pytest.fixture
 def create_market_context():
     """Factory fixture to create custom market contexts."""
+
     def _create(
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
         googl_trend: str = "bullish",
         tsla_trend: str = "bullish",
         equity: float = STARTING_CAPITAL,
-        positions: Optional[list] = None,
+        positions: list[Any] | None = None,
     ) -> MarketContext:
         if timestamp is None:
             timestamp = datetime.now(ET).replace(hour=10, minute=30)
@@ -1073,15 +1084,16 @@ def sample_decision_invalid_symbol(market_time_open) -> TradingDecision:
 @pytest.fixture
 def create_trading_decision():
     """Factory fixture to create custom trading decisions."""
+
     def _create(
         action: ActionType = ActionType.HOLD,
-        symbol: Optional[str] = None,
-        quantity: Optional[int] = None,
-        stop_loss: Optional[float] = None,
-        take_profit: Optional[float] = None,
+        symbol: str | None = None,
+        quantity: int | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
         strategy: StrategyType = StrategyType.DEFENSIVE,
         confidence: float = 0.5,
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
     ) -> TradingDecision:
         if timestamp is None:
             timestamp = datetime.now(ET)
@@ -1232,12 +1244,12 @@ def mock_postgres_client():
 # Try to import learning system types - they may not be available
 try:
     from database.learning_store import (
-        LearningStore,
         Episode,
-        Reflection,
         Learning,
         OutcomeStatus,
+        Reflection,
     )
+
     LEARNING_SYSTEM_AVAILABLE = True
 except ImportError:
     LEARNING_SYSTEM_AVAILABLE = False
@@ -1248,6 +1260,7 @@ except ImportError:
 
 
 if LEARNING_SYSTEM_AVAILABLE:
+
     @pytest.fixture
     def sample_episode():
         """Create a sample Episode for testing."""
@@ -1375,9 +1388,9 @@ class InMemoryLearningStore:
     """In-memory implementation of LearningStore for testing."""
 
     def __init__(self):
-        self.episodes: dict = {}
-        self.reflections: dict = {}
-        self.learnings: dict = {}
+        self.episodes: dict[int, Any] = {}
+        self.reflections: dict[int, Any] = {}
+        self.learnings: dict[int, Any] = {}
         self._next_id = 1
 
     def reset(self):
@@ -1405,7 +1418,7 @@ class InMemoryLearningStore:
             self.episodes[episode_id].outcome_pnl = outcome_pnl
             self.episodes[episode_id].outcome_status = outcome_status
 
-    async def get_recent_episodes(self, agent_name: str, limit: int = 20) -> list:
+    async def get_recent_episodes(self, agent_name: str, limit: int = 20) -> list[Any]:
         agent_episodes = [
             e for e in self.episodes.values() if e.agent_name == agent_name
         ]
@@ -1435,28 +1448,32 @@ class InMemoryLearningStore:
         return self.learnings.get(learning_id)
 
     async def get_learnings_by_tags(
-        self, agent_name: str, tags: list, limit: int = 10
-    ) -> list:
+        self, agent_name: str, tags: list[Any], limit: int = 10
+    ) -> list[Any]:
         matching = []
         for learning in self.learnings.values():
-            if learning.agent_name == agent_name and learning.is_active:
-                if any(tag in learning.tags for tag in tags):
-                    matching.append(learning)
+            if (
+                learning.agent_name == agent_name
+                and learning.is_active
+                and any(tag in learning.tags for tag in tags)
+            ):
+                matching.append(learning)
 
         matching.sort(
             key=lambda x: (x.success_count - x.failure_count, x.success_count),
-            reverse=True
+            reverse=True,
         )
         return matching[:limit]
 
-    async def get_top_learnings(self, agent_name: str, limit: int = 10) -> list:
+    async def get_top_learnings(self, agent_name: str, limit: int = 10) -> list[Any]:
         agent_learnings = [
-            l for l in self.learnings.values()
-            if l.agent_name == agent_name and l.is_active
+            learning
+            for learning in self.learnings.values()
+            if learning.agent_name == agent_name and learning.is_active
         ]
         agent_learnings.sort(
             key=lambda x: (x.success_count - x.failure_count, x.success_count),
-            reverse=True
+            reverse=True,
         )
         return agent_learnings[:limit]
 
@@ -1471,13 +1488,16 @@ class InMemoryLearningStore:
             self.learnings[learning_id].last_validated = datetime.now(ET)
 
     async def find_similar_learning(
-        self, agent_name: str, pattern: str, tags: list
+        self, agent_name: str, pattern: str, tags: list[Any]
     ):
         for learning in self.learnings.values():
-            if learning.agent_name == agent_name and learning.is_active:
-                if pattern.lower() in learning.pattern.lower():
-                    if any(tag in learning.tags for tag in tags):
-                        return learning
+            if (
+                learning.agent_name == agent_name
+                and learning.is_active
+                and (pattern.lower() in learning.pattern.lower())
+                and any(tag in learning.tags for tag in tags)
+            ):
+                return learning
         return None
 
     async def deactivate_learning(self, learning_id: int) -> None:
@@ -1499,6 +1519,7 @@ def in_memory_store():
 @pytest.fixture
 def mock_market_data_responses():
     """Factory to create mock market data API responses."""
+
     def _create(symbol: str, bullish: bool = True):
         price = 185.50 if symbol == "GOOGL" else 265.00
         if not bullish:
@@ -1528,12 +1549,14 @@ def mock_market_data_responses():
                 "c": price * (0.975 if bullish else 1.025),
             },
         }
+
     return _create
 
 
 @pytest.fixture
 def mock_order_response():
     """Factory to create mock order submission responses."""
+
     def _create(
         symbol: str = "GOOGL",
         side: str = "buy",
@@ -1551,6 +1574,7 @@ def mock_order_response():
         order.side.value = side
         order.status.value = status
         return order
+
     return _create
 
 
@@ -1562,10 +1586,12 @@ def mock_order_response():
 @pytest.fixture
 def run_async():
     """Helper to run async functions in sync tests."""
+
     def _run(coro):
         loop = asyncio.get_event_loop_policy().new_event_loop()
         try:
             return loop.run_until_complete(coro)
         finally:
             loop.close()
+
     return _run

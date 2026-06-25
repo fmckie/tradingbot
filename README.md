@@ -1,6 +1,6 @@
 # AI Trading Bot Competition
 
-An automated trading competition pitting **Claude Opus 4.5** against **Grok** on GOOGL and TSLA stocks. Each AI agent makes independent hourly trading decisions during market hours, with integrated risk management, performance tracking, and a learning system.
+An automated trading competition pitting **Claude Sonnet 4.6** against **Grok 4.3** on GOOGL and TSLA stocks. Each AI agent makes independent hourly trading decisions during market hours, with integrated risk management, performance tracking, and a learning system.
 
 ## Overview
 
@@ -11,7 +11,7 @@ An automated trading competition pitting **Claude Opus 4.5** against **Grok** on
 │                                                              │
 │   ┌─────────────┐              ┌─────────────┐              │
 │   │   CLAUDE    │              │    GROK     │              │
-│   │  Opus 4.5   │              │     API     │              │
+│   │ Sonnet 4.6  │              │     4.3     │              │
 │   └──────┬──────┘              └──────┬──────┘              │
 │          │                            │                      │
 │          ▼                            ▼                      │
@@ -28,7 +28,7 @@ An automated trading competition pitting **Claude Opus 4.5** against **Grok** on
 
 ## Features
 
-- **Dual AI Agents**: Claude Opus 4.5 and Grok make independent trading decisions
+- **Dual AI Agents**: Claude Sonnet 4.6 and Grok 4.3 make independent trading decisions
 - **Paper Trading**: Uses Alpaca paper trading accounts (no real money)
 - **Risk Management**: Hard-coded limits enforced by the system
 - **Technical Analysis**: RSI, MACD, Bollinger Bands, EMA, VWAP, ATR
@@ -44,6 +44,26 @@ An automated trading competition pitting **Claude Opus 4.5** against **Grok** on
 git clone https://github.com/fmckie/tradingbot.git
 cd tradingbot
 pip install -r requirements.txt
+```
+
+#### Reproducible install (lockfile)
+
+`requirements.txt` / `requirements-dev.txt` use `>=` floors and stay the
+human-edited source of truth. For a byte-for-byte reproducible environment, the
+repo also ships a committed, fully-pinned lockfile with hashes,
+`requirements.lock`, covering both production and dev/test dependencies:
+
+```bash
+pip install --require-hashes -r requirements.lock
+```
+
+The lockfile is generated with [pip-tools](https://pip-tools.readthedocs.io/).
+Regenerate it whenever you change the floors in the requirements files:
+
+```bash
+pip install pip-tools
+pip-compile --generate-hashes --allow-unsafe \
+  --output-file=requirements.lock requirements.txt requirements-dev.txt
 ```
 
 ### 2. Configure Environment
@@ -94,7 +114,7 @@ modal run modal_app.py
 tradingbot/
 ├── agents/                 # AI agent implementations
 │   ├── base_agent.py      # Base class, dataclasses
-│   ├── claude_agent.py    # Claude Opus 4.5 agent
+│   ├── claude_agent.py    # Claude Sonnet 4.6 agent
 │   └── grok_agent.py      # Grok API agent
 ├── config/                 # Configuration
 │   ├── settings.py        # Risk limits, symbols, hours
@@ -112,7 +132,9 @@ tradingbot/
 │   └── risk_manager.py    # Hard limit enforcement
 ├── monitoring/             # Logging and tracking
 │   ├── logger.py          # Trade event logging
-│   └── scoreboard.py      # Performance metrics
+│   ├── scoreboard.py      # Performance metrics (console)
+│   ├── dashboard.py       # Read-only web monitoring dashboard (stdlib)
+│   └── dashboard.html     # nof1-style live dashboard page
 ├── tools/                  # AI-exposed tools
 │   ├── market_tools.py    # Price/quote tools
 │   ├── trading_tools.py   # Order management
@@ -191,6 +213,27 @@ The scoreboard tracks:
 
 View real-time updates in the console during operation.
 
+## Web Monitoring Dashboard
+
+A zero-dependency web dashboard renders the same competition telemetry as a
+live, nof1-style page (monospace cards, risk-control panel, decision/order log,
+KPI strip). It opens the SQLite log **read-only**, so it is safe to run
+alongside a live `python main.py` session without blocking writes.
+
+```bash
+# Serve at http://127.0.0.1:8787 (polls itself every few seconds)
+python -m monitoring.dashboard
+
+# Custom host/port/database
+python -m monitoring.dashboard --host 0.0.0.0 --port 9000 --db trading_competition.sqlite
+
+# Print the JSON snapshot and exit (no server) — handy for scripting
+python -m monitoring.dashboard --once
+```
+
+Themes: append `?theme=dark` (default) or `?theme=light` to the URL. Routes:
+`GET /` (page), `GET /api/state` (JSON snapshot), `GET /healthz`.
+
 ## API Requirements
 
 ### Alpaca
@@ -199,7 +242,7 @@ View real-time updates in the console during operation.
 - IEX data feed (included with paper trading)
 
 ### Anthropic
-- Claude Opus 4.5 access
+- Claude Sonnet 4.6 access
 - API key with sufficient credits
 
 ### xAI

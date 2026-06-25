@@ -6,19 +6,17 @@ Tests risk enforcement for:
 - Daily loss limit progression
 - Position limits at boundary
 """
-import pytest
-from datetime import datetime, timedelta
-from decimal import Decimal
-from unittest.mock import MagicMock, patch
+
+from datetime import datetime
+from unittest.mock import MagicMock
 
 from agents.base_agent import (
-    TradingDecision,
     ActionType,
     StrategyType,
+    TradingDecision,
 )
-from risk.risk_manager import RiskManager, RiskValidationResult
-from execution.order_executor import OrderExecutor
-from config.settings import RISK_LIMITS, SYMBOLS
+from config.settings import RISK_LIMITS
+from risk.risk_manager import RiskManager
 
 
 class TestMultipleRapidDecisions:
@@ -91,7 +89,10 @@ class TestMultipleRapidDecisions:
             assert result3.adjusted_quantity is not None
             # Adjusted quantity should be smaller to fit within limits
         else:
-            assert "exposure" in result3.message.lower() or "positions" in result3.message.lower()
+            assert (
+                "exposure" in result3.message.lower()
+                or "positions" in result3.message.lower()
+            )
 
     def test_rapid_decisions_respect_position_count_limit(
         self, mock_trading_client, mock_account_with_equity, mock_position_factory
@@ -109,7 +110,8 @@ class TestMultipleRapidDecisions:
 
         # Try to add another symbol position (should fail)
         # Note: We only have 2 symbols allowed (GOOGL, TSLA), so this tests the max
-        # In reality, trying to add a third symbol would be rejected by symbol validation
+        # In reality, trying to add a third symbol would be rejected by symbol
+        # validation
 
         # Instead, test that adding to existing position is allowed
         decision = TradingDecision(
@@ -142,7 +144,7 @@ class TestEdgeCasesNearLimits:
         existing = mock_position_factory(
             symbol="GOOGL",
             qty=300,  # 300 * 150 = 45,000
-            current_price=150.00
+            current_price=150.00,
         )
         mock_trading_client.get_all_positions.return_value = [existing]
 
@@ -168,11 +170,7 @@ class TestEdgeCasesNearLimits:
         risk_manager = RiskManager(mock_trading_client, "test")
 
         # Position worth $49,000 = 49% exposure
-        existing = mock_position_factory(
-            symbol="GOOGL",
-            qty=327,
-            current_price=150.00
-        )
+        existing = mock_position_factory(symbol="GOOGL", qty=327, current_price=150.00)
         mock_trading_client.get_all_positions.return_value = [existing]
 
         # Try to add large position - 10% more = 59% total (exceeds 50% limit)
@@ -208,7 +206,7 @@ class TestEdgeCasesNearLimits:
         existing = mock_position_factory(
             symbol="GOOGL",
             qty=333,  # 333 * 150.15 ~ $50,000
-            current_price=150.15
+            current_price=150.15,
         )
         mock_trading_client.get_all_positions.return_value = [existing]
 
@@ -228,7 +226,9 @@ class TestEdgeCasesNearLimits:
         assert result.valid is False
         assert "exposure" in result.message.lower()
 
-    def test_stop_loss_at_minimum_distance(self, mock_trading_client, mock_account_with_equity):
+    def test_stop_loss_at_minimum_distance(
+        self, mock_trading_client, mock_account_with_equity
+    ):
         """Stop loss at minimum distance should be accepted."""
         mock_trading_client.get_account.return_value = mock_account_with_equity(100000)
         mock_trading_client.get_all_positions.return_value = []
@@ -314,10 +314,12 @@ class TestDailyLossLimitProgression:
         risk_manager = RiskManager(mock_trading_client, "test")
 
         # Simulate yesterday's equity
-        mock_trading_client.get_account.return_value = mock_account_with_equity(95000, last_equity=100000)
+        mock_trading_client.get_account.return_value = mock_account_with_equity(
+            95000, last_equity=100000
+        )
 
         # First check - should initialize tracking
-        result1 = risk_manager._check_daily_loss_limit(95000)
+        risk_manager._check_daily_loss_limit(95000)
 
         # On same day, equity dropped - should be at/near limit
         mock_trading_client.get_account.return_value = mock_account_with_equity(90000)
@@ -343,7 +345,9 @@ class TestDailyLossLimitProgression:
         risk_manager._check_daily_loss_limit(100000)
 
         # Simulate loss exceeding 5% daily limit
-        mock_trading_client.get_account.return_value = mock_account_with_equity(94000)  # 6% loss
+        mock_trading_client.get_account.return_value = mock_account_with_equity(
+            94000
+        )  # 6% loss
 
         decision = TradingDecision(
             timestamp=datetime.now(),
@@ -536,11 +540,7 @@ class TestRiskStatusReporting:
         risk_manager = RiskManager(mock_trading_client, "test")
 
         # Position worth $30,000 = 30% exposure
-        position = mock_position_factory(
-            symbol="GOOGL",
-            qty=200,
-            current_price=150.00
-        )
+        position = mock_position_factory(symbol="GOOGL", qty=200, current_price=150.00)
         mock_trading_client.get_all_positions.return_value = [position]
 
         status = risk_manager.get_risk_status()

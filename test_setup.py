@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Quick test to verify the trading bot setup."""
+
 import os
-import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -60,7 +61,7 @@ imports = [
 ]
 
 import_errors = []
-for module, desc in imports:
+for module, _desc in imports:
     try:
         __import__(module)
         print(f"  ✓ {module}")
@@ -77,39 +78,47 @@ else:
 print("\n3. TESTING ALPACA CONNECTION")
 print("-" * 40)
 
-if not missing or all(v not in missing for v in ["CLAUDE_ALPACA_API_KEY", "CLAUDE_ALPACA_SECRET_KEY"]):
+if not missing or all(
+    v not in missing for v in ["CLAUDE_ALPACA_API_KEY", "CLAUDE_ALPACA_SECRET_KEY"]
+):
     try:
-        from config.alpaca_config import get_claude_client
         from alpaca.trading.models import TradeAccount
+
+        from config.alpaca_config import get_claude_client
+
         trading_client, data_client = get_claude_client()
         account = trading_client.get_account()
         # Type guard: account is TradeAccount, not dict
         if isinstance(account, TradeAccount):
-            print(f"  ✓ Claude account connected!")
+            print("  ✓ Claude account connected!")
             print(f"    Equity: ${float(account.equity or 0):,.2f}")
             print(f"    Cash: ${float(account.cash or 0):,.2f}")
             print(f"    Buying Power: ${float(account.buying_power or 0):,.2f}")
         else:
-            print(f"  ✗ Claude account: unexpected response type")
+            print("  ✗ Claude account: unexpected response type")
     except Exception as e:
         print(f"  ✗ Claude account failed: {e}")
 else:
     print("  ⊘ Skipped (missing Alpaca keys)")
 
-if not missing or all(v not in missing for v in ["GROK_ALPACA_API_KEY", "GROK_ALPACA_SECRET_KEY"]):
+if not missing or all(
+    v not in missing for v in ["GROK_ALPACA_API_KEY", "GROK_ALPACA_SECRET_KEY"]
+):
     try:
-        from config.alpaca_config import get_grok_client
         from alpaca.trading.models import TradeAccount
+
+        from config.alpaca_config import get_grok_client
+
         trading_client, data_client = get_grok_client()
         account = trading_client.get_account()
         # Type guard: account is TradeAccount, not dict
         if isinstance(account, TradeAccount):
-            print(f"  ✓ Grok account connected!")
+            print("  ✓ Grok account connected!")
             print(f"    Equity: ${float(account.equity or 0):,.2f}")
             print(f"    Cash: ${float(account.cash or 0):,.2f}")
             print(f"    Buying Power: ${float(account.buying_power or 0):,.2f}")
         else:
-            print(f"  ✗ Grok account: unexpected response type")
+            print("  ✗ Grok account: unexpected response type")
     except Exception as e:
         print(f"  ✗ Grok account failed: {e}")
 else:

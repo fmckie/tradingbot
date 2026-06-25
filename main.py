@@ -5,46 +5,49 @@ AI Trading Competition: Claude Sonnet 4.6 vs Grok 4.3
 This is the main competition runner that orchestrates hourly trading decisions
 from both AI agents on GOOGL and TSLA.
 """
+
 import argparse
 import asyncio
-import json
 import os
 import sys
-from datetime import datetime, timedelta, date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, cast
+
 import pytz
-from alpaca.trading.models import TradeAccount, Position, Order
-from alpaca.trading.requests import GetOrdersRequest
-from alpaca.trading.enums import QueryOrderStatus
 import schedule
-from rich.console import Console
-from rich.live import Live
+from alpaca.trading.enums import QueryOrderStatus
+from alpaca.trading.models import Order, Position, TradeAccount
+from alpaca.trading.requests import GetOrdersRequest
 from dotenv import load_dotenv
+from rich.console import Console
 
 # Load environment variables
 load_dotenv()
 
-from config.alpaca_config import get_claude_client, get_grok_client
-from config.settings import (
-    TRADING_HOURS, SYMBOLS, STARTING_CAPITAL,
-    LEARNING_ENABLED, SIGNIFICANT_PNL_THRESHOLD, POSTGRES_URL
-)
-from data.market_data import MarketDataProvider
-from data.indicators import TechnicalIndicators
-from data.news import NewsProvider
-from tools.market_tools import MarketTools
-from tools.trading_tools import TradingTools
-from tools.analysis_tools import AnalysisTools
-from tools.news_tools import NewsTools
+from agents.base_agent import ActionType, MarketContext, TradingDecision
 from agents.claude_agent import ClaudeAgent
 from agents.grok_agent import GrokAgent
-from agents.base_agent import MarketContext, TradingDecision, ActionType
-from risk.risk_manager import RiskManager
+from config.alpaca_config import get_claude_client, get_grok_client
+from config.settings import (
+    LEARNING_ENABLED,
+    POSTGRES_URL,
+    SIGNIFICANT_PNL_THRESHOLD,
+    STARTING_CAPITAL,
+    SYMBOLS,
+    TRADING_HOURS,
+)
+from data.indicators import TechnicalIndicators
+from data.market_data import MarketDataProvider
+from data.news import NewsProvider
 from execution.order_executor import OrderExecutor
-from monitoring.scoreboard import Scoreboard
 from monitoring.logger import TradeLogger
-
+from monitoring.scoreboard import Scoreboard
+from risk.risk_manager import RiskManager
+from tools.analysis_tools import AnalysisTools
+from tools.market_tools import MarketTools
+from tools.news_tools import NewsTools
+from tools.trading_tools import TradingTools
 
 console = Console()
 ET = pytz.timezone("America/New_York")
@@ -52,11 +55,16 @@ ET = pytz.timezone("America/New_York")
 # Conditionally import learning system
 if LEARNING_ENABLED and POSTGRES_URL:
     try:
-        from database.postgres_client import PostgresClient, init_database
         from database.learning_store import (
-            LearningStore, Episode, Reflection, Learning,
-            CompetitionScore, OutcomeStatus
+            CompetitionScore,
+            Episode,
+            Learning,
+            LearningStore,
+            OutcomeStatus,
+            Reflection,
         )
+        from database.postgres_client import PostgresClient, init_database
+
         LEARNING_AVAILABLE = True
     except ImportError as e:
         console.print(f"[yellow]Learning system not available: {e}[/yellow]")
@@ -79,7 +87,9 @@ class TradingCompetition:
     """
 
     def __init__(self, skip_market_check: bool = False):
-        console.print("[bold yellow]Initializing AI Trading Competition...[/bold yellow]")
+        console.print(
+            "[bold yellow]Initializing AI Trading Competition...[/bold yellow]"
+        )
         self.skip_market_check = skip_market_check
 
         # Initialize Alpaca clients for both accounts
@@ -99,7 +109,10 @@ class TradingCompetition:
 
         # Initialize tools for each agent
         self.claude_tools = self._create_tools(
-            self.claude_market_data, self.claude_indicators, self.claude_trading, "claude"
+            self.claude_market_data,
+            self.claude_indicators,
+            self.claude_trading,
+            "claude",
         )
         self.grok_tools = self._create_tools(
             self.grok_market_data, self.grok_indicators, self.grok_trading, "grok"
@@ -114,7 +127,9 @@ class TradingCompetition:
         self.grok_risk = RiskManager(self.grok_trading, "grok")
 
         # Order executors
-        self.claude_executor = OrderExecutor(self.claude_trading, self.claude_risk, "claude")
+        self.claude_executor = OrderExecutor(
+            self.claude_trading, self.claude_risk, "claude"
+        )
         self.grok_executor = OrderExecutor(self.grok_trading, self.grok_risk, "grok")
 
         # Monitoring
@@ -125,7 +140,7 @@ class TradingCompetition:
 
         # State
         self.is_running = False
-        self.last_decision_time: Optional[datetime] = None
+        self.last_decision_time: datetime | None = None
 
         # Learning system state - tracks pending episodes awaiting outcome
         self.pending_episodes: dict[str, list[int]] = {"claude": [], "grok": []}
@@ -136,9 +151,9 @@ class TradingCompetition:
         self,
         market_data: MarketDataProvider,
         indicators: TechnicalIndicators,
-        trading_client,
+        trading_client: Any,
         agent_name: str,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Create tool handlers for an agent."""
         return {
             "market": MarketTools(market_data, indicators),
@@ -148,27 +163,30 @@ class TradingCompetition:
         }
 
     def _find_position_entry_time(
-        self, trading_client, symbol: str
-    ) -> Optional[datetime]:
+        self, trading_client: Any, symbol: str
+    ) -> datetime | None:
         """Find the entry time for a position by looking at recent orders."""
         try:
             orders = trading_client.get_orders(
                 GetOrdersRequest(
-                    status=QueryOrderStatus.CLOSED,
-                    symbols=[symbol],
-                    limit=20
+                    status=QueryOrderStatus.CLOSED, symbols=[symbol], limit=20
                 )
             )
             # Find the most recent BUY order that opened the position
             for o in orders:
-                if isinstance(o, Order) and o.side and o.side.value == "buy" and o.filled_at:
+                if (
+                    isinstance(o, Order)
+                    and o.side
+                    and o.side.value == "buy"
+                    and o.filled_at
+                ):
                     return o.filled_at
         except Exception:
             pass
         return None
 
     def _calculate_holding_duration(
-        self, entry_time: Optional[datetime]
+        self, entry_time: datetime | None
     ) -> tuple[float, str]:
         """Calculate holding duration in hours and formatted string."""
         if not entry_time:
@@ -225,12 +243,10 @@ class TradingCompetition:
             market_data = self.claude_market_data
             indicators = self.claude_indicators
             trading_client = self.claude_trading
-            tools = self.claude_tools
         else:
             market_data = self.grok_market_data
             indicators = self.grok_indicators
             trading_client = self.grok_trading
-            tools = self.grok_tools
 
         # Get market data for each symbol
         symbols_data = {}
@@ -288,17 +304,23 @@ class TradingCompetition:
                     "buying_power": buying_power,
                     "portfolio_value": portfolio_value,
                     "daily_pnl": equity - last_equity,
-                    "daily_pnl_percent": (
-                        (equity - last_equity) / last_equity * 100
-                    )
+                    "daily_pnl_percent": ((equity - last_equity) / last_equity * 100)
                     if last_equity > 0
                     else 0.0,
                 }
             else:
-                account_data = {"equity": STARTING_CAPITAL, "cash": STARTING_CAPITAL, "error": "Invalid account type"}
+                account_data = {
+                    "equity": STARTING_CAPITAL,
+                    "cash": STARTING_CAPITAL,
+                    "error": "Invalid account type",
+                }
         except Exception as e:
             console.print(f"[red]Error getting account for {agent_name}: {e}[/red]")
-            account_data = {"equity": STARTING_CAPITAL, "cash": STARTING_CAPITAL, "error": str(e)}
+            account_data = {
+                "equity": STARTING_CAPITAL,
+                "cash": STARTING_CAPITAL,
+                "error": str(e),
+            }
 
         # Get positions with enriched data
         positions_data: list[dict[str, Any]] = []
@@ -322,35 +344,52 @@ class TradingCompetition:
                         "unrealized_pnl_percent": float(p.unrealized_plpc or 0) * 100,
                         # Phase 1: Alpaca intraday fields
                         "intraday_pnl": float(p.unrealized_intraday_pl or 0),
-                        "intraday_pnl_percent": float(p.unrealized_intraday_plpc or 0) * 100,
+                        "intraday_pnl_percent": float(p.unrealized_intraday_plpc or 0)
+                        * 100,
                         "change_today_percent": float(p.change_today or 0) * 100,
                     }
 
                     # Phase 2: Time context
-                    entry_time = self._find_position_entry_time(trading_client, p.symbol)
-                    holding_hours, holding_str = self._calculate_holding_duration(entry_time)
-                    position_dict["entry_time"] = entry_time.isoformat() if entry_time else None
-                    position_dict["entry_time_str"] = entry_time.strftime("%H:%M ET") if entry_time else "Unknown"
+                    entry_time = self._find_position_entry_time(
+                        trading_client, p.symbol
+                    )
+                    holding_hours, holding_str = self._calculate_holding_duration(
+                        entry_time
+                    )
+                    position_dict["entry_time"] = (
+                        entry_time.isoformat() if entry_time else None
+                    )
+                    position_dict["entry_time_str"] = (
+                        entry_time.strftime("%H:%M ET") if entry_time else "Unknown"
+                    )
                     position_dict["holding_hours"] = holding_hours
                     position_dict["holding_duration"] = holding_str
 
                     # Phase 3: Risk context - exposure percentage
-                    position_dict["exposure_percent"] = (market_val / equity * 100) if equity > 0 else 0.0
+                    position_dict["exposure_percent"] = (
+                        (market_val / equity * 100) if equity > 0 else 0.0
+                    )
 
                     # Phase 3 & 4: Get stop/TP and symbol history from learning system
                     if LEARNING_AVAILABLE:
                         try:
                             # Get stop/TP from stored episode
-                            entry_details = await LearningStore.get_position_entry_details(
-                                agent_name, p.symbol
+                            entry_details = (
+                                await LearningStore.get_position_entry_details(
+                                    agent_name, p.symbol
+                                )
                             )
                             if entry_details:
                                 stop_loss = entry_details.get("stop_loss")
                                 take_profit = entry_details.get("take_profit")
                                 position_dict["stop_loss"] = stop_loss
                                 position_dict["take_profit"] = take_profit
-                                position_dict["entry_strategy"] = entry_details.get("strategy")
-                                position_dict["entry_confidence"] = entry_details.get("confidence")
+                                position_dict["entry_strategy"] = entry_details.get(
+                                    "strategy"
+                                )
+                                position_dict["entry_confidence"] = entry_details.get(
+                                    "confidence"
+                                )
 
                                 # Calculate distance to stop/TP as percentage
                                 if stop_loss and current > 0:
@@ -363,16 +402,25 @@ class TradingCompetition:
                                     )
 
                             # Get symbol trading history
-                            symbol_history = await LearningStore.get_symbol_trade_history(
-                                agent_name, p.symbol
+                            symbol_history = (
+                                await LearningStore.get_symbol_trade_history(
+                                    agent_name, p.symbol
+                                )
                             )
-                            position_dict["symbol_total_trades"] = symbol_history["total_trades"]
+                            position_dict["symbol_total_trades"] = symbol_history[
+                                "total_trades"
+                            ]
                             position_dict["symbol_wins"] = symbol_history["wins"]
                             position_dict["symbol_losses"] = symbol_history["losses"]
-                            position_dict["symbol_win_rate"] = symbol_history["win_rate"]
+                            position_dict["symbol_win_rate"] = symbol_history[
+                                "win_rate"
+                            ]
                             position_dict["symbol_avg_pnl"] = symbol_history["avg_pnl"]
                         except Exception as e:
-                            console.print(f"[yellow]Warning: Failed to get position details: {e}[/yellow]")
+                            console.print(
+                                f"[yellow]Warning: Failed to get position "
+                                f"details: {e}[/yellow]"
+                            )
 
                     positions_data.append(position_dict)
         except Exception as e:
@@ -382,18 +430,26 @@ class TradingCompetition:
         # Get recent orders
         recent_trades: list[dict[str, Any]] = []
         try:
-            orders = trading_client.get_orders(GetOrdersRequest(status=QueryOrderStatus.CLOSED, limit=10))
+            orders = trading_client.get_orders(
+                GetOrdersRequest(status=QueryOrderStatus.CLOSED, limit=10)
+            )
             for o in orders:
                 if isinstance(o, Order) and o.symbol in SYMBOLS and o.side is not None:
-                    recent_trades.append({
-                        "symbol": o.symbol,
-                        "side": o.side.value,
-                        "quantity": int(o.qty or 0),
-                        "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
-                        "status": o.status.value if o.status else None,
-                        "filled_at": o.filled_at.isoformat() if o.filled_at else None,
-                    })
-        except Exception as e:
+                    recent_trades.append(
+                        {
+                            "symbol": o.symbol,
+                            "side": o.side.value,
+                            "quantity": int(o.qty or 0),
+                            "filled_avg_price": float(o.filled_avg_price)
+                            if o.filled_avg_price
+                            else None,
+                            "status": o.status.value if o.status else None,
+                            "filled_at": o.filled_at.isoformat()
+                            if o.filled_at
+                            else None,
+                        }
+                    )
+        except Exception:
             recent_trades = []
 
         # Determine market condition
@@ -408,13 +464,17 @@ class TradingCompetition:
             market_condition = "mixed - stocks showing different trends"
 
         # Fetch news data
-        news_data: dict[str, list[dict]] = {}
-        news_sentiment: dict[str, dict] = {}
+        news_data: dict[str, list[dict[str, Any]]] = {}
+        news_sentiment: dict[str, dict[str, Any]] = {}
         try:
             for symbol in SYMBOLS:
-                articles = self.news_provider.get_news_for_symbol(symbol, hours_back=24, limit=5)
+                articles = self.news_provider.get_news_for_symbol(
+                    symbol, hours_back=24, limit=5
+                )
                 news_data[symbol] = [a.to_dict() for a in articles]
-                sentiment = self.news_provider.get_sentiment_summary(symbol, hours_back=24)
+                sentiment = self.news_provider.get_sentiment_summary(
+                    symbol, hours_back=24
+                )
                 news_sentiment[symbol] = sentiment.to_dict()
         except Exception as e:
             console.print(f"[yellow]Warning: Failed to fetch news: {e}[/yellow]")
@@ -431,7 +491,7 @@ class TradingCompetition:
         )
 
     async def run_agent_decision(
-        self, agent_name: str, agent, executor, context: MarketContext
+        self, agent_name: str, agent: Any, executor: Any, context: MarketContext
     ) -> TradingDecision:
         """Run a single agent's decision cycle."""
         console.print(f"\n[bold cyan]{agent_name.upper()}'s turn...[/bold cyan]")
@@ -475,11 +535,13 @@ class TradingCompetition:
                         self.pending_episodes[agent_name].append(episode_id)
                 else:
                     console.print(
-                        f"[red]{agent_name.upper()}: Trade failed - {result.message}[/red]"
+                        f"[red]{agent_name.upper()}: Trade failed - "
+                        f"{result.message}[/red]"
                     )
             else:
                 console.print(
-                    f"[yellow]{agent_name.upper()}: HOLD - {decision.strategy_used.value}[/yellow]"
+                    f"[yellow]{agent_name.upper()}: HOLD - "
+                    f"{decision.strategy_used.value}[/yellow]"
                 )
                 # Mark HOLD episodes as complete immediately
                 if episode_id and LEARNING_AVAILABLE:
@@ -487,7 +549,7 @@ class TradingCompetition:
                         episode_id, Decimal("0"), OutcomeStatus.HOLD.value
                     )
 
-            return decision
+            return cast(TradingDecision, decision)
 
         except Exception as e:
             console.print(f"[red]Error in {agent_name}'s decision: {e}[/red]")
@@ -502,8 +564,8 @@ class TradingCompetition:
         agent_name: str,
         context: MarketContext,
         decision: TradingDecision,
-        market_context_dict: dict
-    ) -> Optional[int]:
+        market_context_dict: dict[str, Any],
+    ) -> int | None:
         """Create a learning episode for this decision."""
         if not LEARNING_AVAILABLE:
             return None
@@ -524,14 +586,14 @@ class TradingCompetition:
                     "confidence": decision.confidence,
                 },
                 outcome_pnl=None,
-                outcome_status=OutcomeStatus.PENDING.value
+                outcome_status=OutcomeStatus.PENDING.value,
             )
             return await LearningStore.create_episode(episode)
         except Exception as e:
             console.print(f"[yellow]Warning: Failed to create episode: {e}[/yellow]")
             return None
 
-    async def process_pending_outcomes(self):
+    async def process_pending_outcomes(self) -> None:
         """
         Check pending episodes and process completed trades.
 
@@ -547,14 +609,23 @@ class TradingCompetition:
                 continue
 
             agent = self.claude_agent if agent_name == "claude" else self.grok_agent
-            trading_client = self.claude_trading if agent_name == "claude" else self.grok_trading
+            trading_client = (
+                self.claude_trading if agent_name == "claude" else self.grok_trading
+            )
 
             # Get current positions
             try:
                 positions = trading_client.get_all_positions()
-                position_symbols = {p.symbol for p in positions if isinstance(p, Position) and p.symbol in SYMBOLS}
+                position_symbols = {
+                    p.symbol
+                    for p in positions
+                    if isinstance(p, Position) and p.symbol in SYMBOLS
+                }
             except Exception as e:
-                console.print(f"[yellow]Warning: Failed to get positions for {agent_name}: {e}[/yellow]")
+                console.print(
+                    f"[yellow]Warning: Failed to get positions for "
+                    f"{agent_name}: {e}[/yellow]"
+                )
                 continue
 
             # Process each pending episode
@@ -582,7 +653,9 @@ class TradingCompetition:
 
                     # Position closed - calculate outcome
                     pnl = await self._calculate_trade_pnl(
-                        trading_client, episode.timestamp, symbol
+                        trading_client,
+                        cast(datetime, episode.timestamp),
+                        cast(str, symbol),
                     )
 
                     # Determine outcome status
@@ -601,8 +674,12 @@ class TradingCompetition:
                     # Generate reflection for significant trades
                     if abs(pnl) >= SIGNIFICANT_PNL_THRESHOLD:
                         await self._generate_and_store_reflection(
-                            agent, episode_id, decision,
-                            episode.symbols_context, pnl, outcome_status
+                            agent,
+                            episode_id,
+                            decision,
+                            episode.symbols_context,
+                            pnl,
+                            outcome_status,
                         )
 
                     completed_episodes.append(episode_id)
@@ -612,7 +689,10 @@ class TradingCompetition:
                     )
 
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Failed to process episode {episode_id}: {e}[/yellow]")
+                    console.print(
+                        f"[yellow]Warning: Failed to process episode "
+                        f"{episode_id}: {e}[/yellow]"
+                    )
 
             # Remove completed episodes from pending
             for ep_id in completed_episodes:
@@ -620,21 +700,21 @@ class TradingCompetition:
                     self.pending_episodes[agent_name].remove(ep_id)
 
     async def _calculate_trade_pnl(
-        self,
-        trading_client,
-        since: datetime,
-        symbol: str
+        self, trading_client: Any, since: datetime, symbol: str
     ) -> float:
         """Calculate P&L for a completed trade."""
         try:
             # Get recent closed orders for the symbol
             orders = trading_client.get_orders(
-                GetOrdersRequest(status=QueryOrderStatus.CLOSED, symbols=[symbol], limit=20)
+                GetOrdersRequest(
+                    status=QueryOrderStatus.CLOSED, symbols=[symbol], limit=20
+                )
             )
 
             # Find orders after the decision timestamp
             relevant_orders = [
-                o for o in orders
+                o
+                for o in orders
                 if isinstance(o, Order) and o.filled_at and o.filled_at >= since
             ]
 
@@ -644,7 +724,11 @@ class TradingCompetition:
             # Simple P&L calculation: sum of (side * qty * price)
             total_pnl = 0.0
             for order in relevant_orders:
-                if order.filled_avg_price and order.filled_qty and order.side is not None:
+                if (
+                    order.filled_avg_price
+                    and order.filled_qty
+                    and order.side is not None
+                ):
                     price = float(order.filled_avg_price)
                     qty = float(order.filled_qty)
                     # Buy orders reduce P&L, sell orders increase it
@@ -661,13 +745,13 @@ class TradingCompetition:
 
     async def _generate_and_store_reflection(
         self,
-        agent,
+        agent: Any,
         episode_id: int,
-        decision_made: dict,
-        market_context: dict,
+        decision_made: dict[str, Any],
+        market_context: dict[str, Any],
         outcome_pnl: float,
-        outcome_status: str
-    ):
+        outcome_status: str,
+    ) -> None:
         """Generate and store a reflection for a completed trade."""
         if not LEARNING_AVAILABLE:
             return
@@ -698,22 +782,23 @@ class TradingCompetition:
                 lesson_learned=reflection_data.get("lesson_learned", ""),
                 next_time_will=reflection_data.get("next_time_will", ""),
                 confidence_adjustment=confidence_adj,
-                tags=reflection_data.get("tags", [])
+                tags=reflection_data.get("tags", []),
             )
             await LearningStore.create_reflection(reflection)
 
             # Potentially distill into a learning
-            await self._maybe_create_learning(agent.name, reflection_data, outcome_status)
+            await self._maybe_create_learning(
+                agent.name, reflection_data, outcome_status
+            )
 
         except Exception as e:
-            console.print(f"[yellow]Warning: Failed to generate reflection: {e}[/yellow]")
+            console.print(
+                f"[yellow]Warning: Failed to generate reflection: {e}[/yellow]"
+            )
 
     async def _maybe_create_learning(
-        self,
-        agent_name: str,
-        reflection_data: dict,
-        outcome_status: str
-    ):
+        self, agent_name: str, reflection_data: dict[str, Any], outcome_status: str
+    ) -> None:
         """Create or update a learning from significant reflection."""
         if not LEARNING_AVAILABLE:
             return
@@ -757,16 +842,18 @@ class TradingCompetition:
                     pattern=reflection_data.get("next_time_will", lesson)[:200],
                     insight=lesson[:500],
                     success_count=1 if outcome_status == OutcomeStatus.WIN.value else 0,
-                    failure_count=1 if outcome_status == OutcomeStatus.LOSS.value else 0,
+                    failure_count=1
+                    if outcome_status == OutcomeStatus.LOSS.value
+                    else 0,
                     is_active=True,
-                    tags=tags
+                    tags=tags,
                 )
                 await LearningStore.create_learning(learning)
 
         except Exception as e:
             console.print(f"[yellow]Warning: Failed to create learning: {e}[/yellow]")
 
-    async def update_scoreboard(self):
+    async def update_scoreboard(self) -> None:
         """Update the scoreboard with current performance."""
         for agent_name, trading_client in [
             ("claude", self.claude_trading),
@@ -779,13 +866,17 @@ class TradingCompetition:
                 if not isinstance(account, TradeAccount):
                     continue
 
-                equity = float(account.equity)
-                cash = float(account.cash)
+                equity = float(account.equity) if account.equity is not None else 0.0
+                cash = float(account.cash) if account.cash is not None else 0.0
                 positions_value = sum(
-                    float(p.market_value) for p in positions if isinstance(p, Position) and p.symbol in SYMBOLS
+                    float(p.market_value) if p.market_value is not None else 0.0
+                    for p in positions
+                    if isinstance(p, Position) and p.symbol in SYMBOLS
                 )
                 unrealized_pnl = sum(
-                    float(p.unrealized_pl) for p in positions if isinstance(p, Position) and p.symbol in SYMBOLS
+                    float(p.unrealized_pl) if p.unrealized_pl is not None else 0.0
+                    for p in positions
+                    if isinstance(p, Position) and p.symbol in SYMBOLS
                 )
 
                 # Get agent for strategy info
@@ -816,16 +907,21 @@ class TradingCompetition:
                 )
 
             except Exception as e:
-                console.print(f"[red]Error updating scoreboard for {agent_name}: {e}[/red]")
+                console.print(
+                    f"[red]Error updating scoreboard for {agent_name}: {e}[/red]"
+                )
 
-    async def run_hourly_cycle(self):
+    async def run_hourly_cycle(self) -> None:
         """Run the hourly decision cycle for both agents."""
         if not self.skip_market_check and not self.is_market_open():
             console.print("[yellow]Market is closed. Waiting...[/yellow]")
             return
 
         console.print("\n" + "=" * 60)
-        console.print(f"[bold]HOURLY CYCLE - {datetime.now(ET).strftime('%Y-%m-%d %H:%M ET')}[/bold]")
+        console.print(
+            f"[bold]HOURLY CYCLE - "
+            f"{datetime.now(ET).strftime('%Y-%m-%d %H:%M ET')}[/bold]"
+        )
         console.print("=" * 60)
 
         # Process any pending trade outcomes from previous cycles
@@ -844,7 +940,9 @@ class TradingCompetition:
         await asyncio.sleep(2)
 
         # Run Grok's decision
-        await self.run_agent_decision("grok", self.grok_agent, self.grok_executor, grok_context)
+        await self.run_agent_decision(
+            "grok", self.grok_agent, self.grok_executor, grok_context
+        )
 
         # Update scoreboard
         await self.update_scoreboard()
@@ -857,7 +955,7 @@ class TradingCompetition:
 
         self.last_decision_time = datetime.now(ET)
 
-    async def _update_competition_scores(self):
+    async def _update_competition_scores(self) -> None:
         """Update daily competition scores in the learning system."""
         if not LEARNING_AVAILABLE:
             return
@@ -879,8 +977,25 @@ class TradingCompetition:
                     agent_name=agent_name,
                     date=today,
                     starting_equity=Decimal(str(STARTING_CAPITAL)),
-                    ending_equity=Decimal(str(float(account.equity))),
-                    daily_pnl=Decimal(str(float(account.equity) - float(account.last_equity))),
+                    ending_equity=Decimal(
+                        str(
+                            float(account.equity) if account.equity is not None else 0.0
+                        )
+                    ),
+                    daily_pnl=Decimal(
+                        str(
+                            (
+                                float(account.equity)
+                                if account.equity is not None
+                                else 0.0
+                            )
+                            - (
+                                float(account.last_equity)
+                                if account.last_equity is not None
+                                else 0.0
+                            )
+                        )
+                    ),
                     trades_count=agent.state.total_trades,
                     wins=agent.state.winning_trades,
                     losses=agent.state.losing_trades,
@@ -889,9 +1004,12 @@ class TradingCompetition:
                 await LearningStore.upsert_daily_score(score)
 
             except Exception as e:
-                console.print(f"[yellow]Warning: Failed to update competition score for {agent_name}: {e}[/yellow]")
+                console.print(
+                    f"[yellow]Warning: Failed to update competition score "
+                    f"for {agent_name}: {e}[/yellow]"
+                )
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the competition."""
         self.is_running = True
         console.print("\n[bold green]STARTING AI TRADING COMPETITION[/bold green]")
@@ -905,9 +1023,13 @@ class TradingCompetition:
                 await init_database()
                 console.print("[green]Learning system: PostgreSQL connected[/green]")
             except Exception as e:
-                console.print(f"[yellow]Learning system: Failed to initialize ({e})[/yellow]")
+                console.print(
+                    f"[yellow]Learning system: Failed to initialize ({e})[/yellow]"
+                )
         else:
-            console.print("[yellow]Learning system: Disabled (no DATABASE_URL)[/yellow]")
+            console.print(
+                "[yellow]Learning system: Disabled (no DATABASE_URL)[/yellow]"
+            )
 
         console.print("")
 
@@ -929,7 +1051,7 @@ class TradingCompetition:
             schedule.run_pending()
             await asyncio.sleep(10)
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the competition."""
         self.is_running = False
         console.print("\n[bold yellow]Competition stopped.[/bold yellow]")
@@ -941,19 +1063,23 @@ class TradingCompetition:
         console.print("\n[bold]FINAL SUMMARY[/bold]")
         self.scoreboard.display()
 
-        summary = self.logger.get_competition_summary()
+        self.logger.get_competition_summary()
         console.print(f"\nCompetition data saved to {self.logger.db_path}")
 
         # Close PostgreSQL connection pool
         if LEARNING_AVAILABLE:
             try:
                 await PostgresClient.close()
-                console.print("[green]Learning system: PostgreSQL connection closed[/green]")
+                console.print(
+                    "[green]Learning system: PostgreSQL connection closed[/green]"
+                )
             except Exception as e:
-                console.print(f"[yellow]Warning: Failed to close PostgreSQL: {e}[/yellow]")
+                console.print(
+                    f"[yellow]Warning: Failed to close PostgreSQL: {e}[/yellow]"
+                )
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="AI Trading Competition: Claude Sonnet 4.6 vs Grok 4.3"
@@ -971,7 +1097,7 @@ def parse_args():
     return parser.parse_args()
 
 
-async def main():
+async def main() -> None:
     """Main entry point."""
     args = parse_args()
 
@@ -1002,9 +1128,13 @@ async def main():
             if LEARNING_AVAILABLE:
                 try:
                     await init_database()
-                    console.print("[green]Learning system: PostgreSQL connected[/green]")
+                    console.print(
+                        "[green]Learning system: PostgreSQL connected[/green]"
+                    )
                 except Exception as e:
-                    console.print(f"[yellow]Learning system: Failed to initialize ({e})[/yellow]")
+                    console.print(
+                        f"[yellow]Learning system: Failed to initialize ({e})[/yellow]"
+                    )
 
             if args.skip_market_check or competition.is_market_open():
                 await competition.run_hourly_cycle()

@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """Tests for the news integration."""
+
 import time
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime
+from unittest.mock import Mock, patch
 
 from data.news import (
-    NewsProvider,
-    NewsArticle,
-    NewsSentiment,
-    BULLISH_KEYWORDS,
     BEARISH_KEYWORDS,
+    BULLISH_KEYWORDS,
+    NewsArticle,
+    NewsProvider,
+    NewsSentiment,
 )
 from tools.news_tools import NewsTools
-from config.settings import SYMBOLS
 
 
 def test_sentiment_scoring():
     """Test the keyword-based sentiment scoring."""
     # Create a mock provider to test the _score_sentiment method without API keys
-    with patch.object(NewsProvider, '__init__', lambda self, **kwargs: None):
+    with patch.object(NewsProvider, "__init__", lambda self, **kwargs: None):
         provider = NewsProvider()
         provider._cache = {}
 
@@ -28,12 +28,16 @@ def test_sentiment_scoring():
         assert label == "bullish", f"Expected bullish label, got {label}"
 
         # Test bearish keywords
-        score, label = provider._score_sentiment("Stock plunges after disappointing lawsuit news")
+        score, label = provider._score_sentiment(
+            "Stock plunges after disappointing lawsuit news"
+        )
         assert score < 0, f"Expected negative score for bearish text, got {score}"
         assert label == "bearish", f"Expected bearish label, got {label}"
 
         # Test neutral text
-        score, label = provider._score_sentiment("Company announces quarterly meeting scheduled")
+        score, label = provider._score_sentiment(
+            "Company announces quarterly meeting scheduled"
+        )
         assert label == "neutral", f"Expected neutral label, got {label}"
 
         # Test empty text
@@ -95,7 +99,7 @@ def test_news_sentiment_dataclass():
 def test_caching_behavior():
     """Test that caching works correctly."""
     # Create a mock provider to test caching methods without API keys
-    with patch.object(NewsProvider, '__init__', lambda self, **kwargs: None):
+    with patch.object(NewsProvider, "__init__", lambda self, **kwargs: None):
         provider = NewsProvider()
         provider._cache = {}
         provider.CACHE_TTL = 900
@@ -126,7 +130,9 @@ def test_news_tools_schema():
     """Test that news tools schema is properly defined."""
     from tools.news_tools import NEWS_TOOLS_SCHEMA
 
-    assert len(NEWS_TOOLS_SCHEMA) == 3, f"Expected 3 news tools, got {len(NEWS_TOOLS_SCHEMA)}"
+    assert len(NEWS_TOOLS_SCHEMA) == 3, (
+        f"Expected 3 news tools, got {len(NEWS_TOOLS_SCHEMA)}"
+    )
 
     tool_names = [t["name"] for t in NEWS_TOOLS_SCHEMA]
     assert "get_recent_news" in tool_names
@@ -203,14 +209,15 @@ def test_news_tools_execute():
 def test_format_news_for_context():
     """Test formatting news for AI context."""
     # Create a mock provider
-    with patch.object(NewsProvider, '__init__', lambda self, **kwargs: None):
+    with patch.object(NewsProvider, "__init__", lambda self, **kwargs: None):
         provider = NewsProvider()
         provider._cache = {}
 
         # Mock the methods to return test data
-        with patch.object(provider, 'get_sentiment_summary') as mock_sentiment, \
-             patch.object(provider, 'get_news_for_symbol') as mock_news:
-
+        with (
+            patch.object(provider, "get_sentiment_summary") as mock_sentiment,
+            patch.object(provider, "get_news_for_symbol") as mock_news,
+        ):
             mock_sentiment.return_value = NewsSentiment(
                 symbol="GOOGL",
                 article_count=3,
@@ -235,7 +242,9 @@ def test_format_news_for_context():
                 )
             ]
 
-            formatted = provider.format_news_for_context(["GOOGL"], hours_back=24, max_headlines=3)
+            formatted = provider.format_news_for_context(
+                ["GOOGL"], hours_back=24, max_headlines=3
+            )
 
             assert "GOOGL" in formatted
             assert "BULLISH" in formatted
@@ -265,7 +274,7 @@ def test_keyword_lists():
 def test_symbol_validation():
     """Test that only valid symbols are accepted."""
     # Create a mock provider to test symbol validation without API keys
-    with patch.object(NewsProvider, '__init__', lambda self, **kwargs: None):
+    with patch.object(NewsProvider, "__init__", lambda self, **kwargs: None):
         provider = NewsProvider()
         provider._cache = {}
         provider.client = Mock()
@@ -294,31 +303,53 @@ def test_interpret_sentiment():
 
     # Test various sentiment levels
     strongly_bullish = NewsSentiment(
-        symbol="TEST", article_count=5, avg_sentiment=0.5,
-        sentiment_label="bullish", bullish_count=4, bearish_count=0,
-        neutral_count=1, latest_headline="Test"
+        symbol="TEST",
+        article_count=5,
+        avg_sentiment=0.5,
+        sentiment_label="bullish",
+        bullish_count=4,
+        bearish_count=0,
+        neutral_count=1,
+        latest_headline="Test",
     )
     assert "bullish" in tools._interpret_sentiment(strongly_bullish).lower()
 
     strongly_bearish = NewsSentiment(
-        symbol="TEST", article_count=5, avg_sentiment=-0.5,
-        sentiment_label="bearish", bullish_count=0, bearish_count=4,
-        neutral_count=1, latest_headline="Test"
+        symbol="TEST",
+        article_count=5,
+        avg_sentiment=-0.5,
+        sentiment_label="bearish",
+        bullish_count=0,
+        bearish_count=4,
+        neutral_count=1,
+        latest_headline="Test",
     )
     assert "bearish" in tools._interpret_sentiment(strongly_bearish).lower()
 
     neutral = NewsSentiment(
-        symbol="TEST", article_count=5, avg_sentiment=0.0,
-        sentiment_label="neutral", bullish_count=2, bearish_count=2,
-        neutral_count=1, latest_headline="Test"
+        symbol="TEST",
+        article_count=5,
+        avg_sentiment=0.0,
+        sentiment_label="neutral",
+        bullish_count=2,
+        bearish_count=2,
+        neutral_count=1,
+        latest_headline="Test",
     )
-    assert "mixed" in tools._interpret_sentiment(neutral).lower() or \
-           "neutral" in tools._interpret_sentiment(neutral).lower()
+    assert (
+        "mixed" in tools._interpret_sentiment(neutral).lower()
+        or "neutral" in tools._interpret_sentiment(neutral).lower()
+    )
 
     no_news = NewsSentiment(
-        symbol="TEST", article_count=0, avg_sentiment=0.0,
-        sentiment_label="neutral", bullish_count=0, bearish_count=0,
-        neutral_count=0, latest_headline="No recent news"
+        symbol="TEST",
+        article_count=0,
+        avg_sentiment=0.0,
+        sentiment_label="neutral",
+        bullish_count=0,
+        bearish_count=0,
+        neutral_count=0,
+        latest_headline="No recent news",
     )
     assert "neutral" in tools._interpret_sentiment(no_news).lower()
 
@@ -367,5 +398,6 @@ def run_all_tests():
 
 if __name__ == "__main__":
     import sys
+
     success = run_all_tests()
     sys.exit(0 if success else 1)

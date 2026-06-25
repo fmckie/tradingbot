@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Test script for the PostgreSQL learning system."""
+
 import asyncio
 import sys
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from config.settings import POSTGRES_URL, LEARNING_ENABLED
+from config.settings import LEARNING_ENABLED, POSTGRES_URL
 
 
 async def test_learning_system():
@@ -27,11 +29,15 @@ async def test_learning_system():
     print(f"   [OK] LEARNING_ENABLED: {LEARNING_ENABLED}")
 
     # Import after loading env
-    from database.postgres_client import PostgresClient, init_database
     from database.learning_store import (
-        LearningStore, Episode, Reflection, Learning,
-        CompetitionScore, OutcomeStatus
+        CompetitionScore,
+        Episode,
+        Learning,
+        LearningStore,
+        OutcomeStatus,
+        Reflection,
     )
+    from database.postgres_client import PostgresClient, init_database
 
     # Test connection
     print("\n2. DATABASE CONNECTION")
@@ -83,9 +89,9 @@ async def test_learning_system():
                 "action": "buy",
                 "symbol": "GOOGL",
                 "quantity": 10,
-                "strategy": "momentum"
+                "strategy": "momentum",
             },
-            outcome_status=OutcomeStatus.PENDING.value
+            outcome_status=OutcomeStatus.PENDING.value,
         )
         episode_id = await LearningStore.create_episode(episode)
         print(f"   [OK] Created episode: id={episode_id}")
@@ -103,8 +109,12 @@ async def test_learning_system():
             episode_id, Decimal("125.50"), OutcomeStatus.WIN.value
         )
         updated = await LearningStore.get_episode(episode_id)
+        assert updated is not None
         if updated.outcome_status == "win":
-            print(f"   [OK] Updated outcome: {updated.outcome_status}, P&L: ${updated.outcome_pnl}")
+            print(
+                f"   [OK] Updated outcome: {updated.outcome_status}, "
+                f"P&L: ${updated.outcome_pnl}"
+            )
         else:
             print("   [FAIL] Outcome update failed")
             return False
@@ -125,7 +135,7 @@ async def test_learning_system():
             lesson_learned="Wait for RSI to cross back above 30 for confirmation",
             next_time_will="Use RSI + MACD confirmation together",
             confidence_adjustment=Decimal("0.05"),
-            tags=["RSI", "GOOGL", "MOMENTUM", "TEST"]
+            tags=["RSI", "GOOGL", "MOMENTUM", "TEST"],
         )
         reflection_id = await LearningStore.create_reflection(reflection)
         print(f"   [OK] Created reflection: id={reflection_id}")
@@ -156,7 +166,7 @@ async def test_learning_system():
             success_count=5,
             failure_count=2,
             is_active=True,
-            tags=["RSI", "MACD", "REVERSAL", "GOOGL", "TEST"]
+            tags=["RSI", "MACD", "REVERSAL", "GOOGL", "TEST"],
         )
         learning_id = await LearningStore.create_learning(learning)
         print(f"   [OK] Created learning: id={learning_id}")
@@ -167,8 +177,11 @@ async def test_learning_system():
         )
         if learnings:
             print(f"   [OK] Retrieved {len(learnings)} learning(s) by tags")
-            for l in learnings:
-                print(f"       - {l.pattern[:50]}... ({l.success_rate:.0f}% success)")
+            for learning in learnings:
+                print(
+                    f"       - {learning.pattern[:50]}... "
+                    f"({learning.success_rate:.0f}% success)"
+                )
         else:
             print("   [FAIL] Learning retrieval failed")
             return False
@@ -176,8 +189,11 @@ async def test_learning_system():
         # Test increment
         await LearningStore.increment_learning_success(learning_id)
         updated_learning = await LearningStore.get_learning(learning_id)
+        assert updated_learning is not None
         if updated_learning.success_count == 6:
-            print(f"   [OK] Incremented success count: {updated_learning.success_count}")
+            print(
+                f"   [OK] Incremented success count: {updated_learning.success_count}"
+            )
         else:
             print("   [FAIL] Increment failed")
             return False
@@ -203,7 +219,7 @@ async def test_learning_system():
             trades_count=5,
             wins=3,
             losses=2,
-            strategies_used={"momentum": 3, "mean_reversion": 2}
+            strategies_used={"momentum": 3, "mean_reversion": 2},
         )
         score_id = await LearningStore.upsert_daily_score(score)
         print(f"   [OK] Upserted daily score: id={score_id}")

@@ -1,12 +1,13 @@
 """Risk manager enforcing hard limits on trading decisions."""
-from dataclasses import dataclass, field
-from datetime import datetime, date
-from typing import Any
-from alpaca.trading.client import TradingClient
-from alpaca.trading.models import TradeAccount, Position
 
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import Any
+
+from alpaca.trading.client import TradingClient
+
+from agents.base_agent import ActionType, TradingDecision
 from config.settings import RISK_LIMITS, SYMBOLS
-from agents.base_agent import TradingDecision, ActionType
 
 
 @dataclass
@@ -44,7 +45,9 @@ class RiskManager:
 
         # HOLD and CLOSE actions are always valid
         if decision.action == ActionType.HOLD:
-            return RiskValidationResult(valid=True, message="HOLD action - no validation needed")
+            return RiskValidationResult(
+                valid=True, message="HOLD action - no validation needed"
+            )
 
         if decision.action == ActionType.CLOSE:
             return RiskValidationResult(valid=True, message="CLOSE action - validated")
@@ -53,7 +56,9 @@ class RiskManager:
         if decision.action in [ActionType.BUY, ActionType.SELL]:
             # 1. Validate symbol
             if decision.symbol not in SYMBOLS:
-                violations.append(f"Invalid symbol: {decision.symbol}. Must be {SYMBOLS}")
+                violations.append(
+                    f"Invalid symbol: {decision.symbol}. Must be {SYMBOLS}"
+                )
 
             # 2. Validate stop-loss exists
             if RISK_LIMITS.require_stop_loss and not decision.stop_loss:
@@ -65,14 +70,14 @@ class RiskManager:
 
                 if stop_distance < RISK_LIMITS.min_stop_distance:
                     violations.append(
-                        f"Stop-loss too tight: {stop_distance*100:.2f}% "
-                        f"(min {RISK_LIMITS.min_stop_distance*100:.1f}%)"
+                        f"Stop-loss too tight: {stop_distance * 100:.2f}% "
+                        f"(min {RISK_LIMITS.min_stop_distance * 100:.1f}%)"
                     )
 
                 if stop_distance > RISK_LIMITS.max_stop_distance:
                     violations.append(
-                        f"Stop-loss too wide: {stop_distance*100:.2f}% "
-                        f"(max {RISK_LIMITS.max_stop_distance*100:.1f}%)"
+                        f"Stop-loss too wide: {stop_distance * 100:.2f}% "
+                        f"(max {RISK_LIMITS.max_stop_distance * 100:.1f}%)"
                     )
 
             # 4. Validate quantity exists
@@ -94,8 +99,7 @@ class RiskManager:
             # 6. Check max positions
             positions = self.client.get_all_positions()
             current_positions = [
-                p for p in positions
-                if hasattr(p, 'symbol') and p.symbol in SYMBOLS
+                p for p in positions if hasattr(p, "symbol") and p.symbol in SYMBOLS
             ]
 
             if len(current_positions) >= RISK_LIMITS.max_positions:
@@ -120,16 +124,21 @@ class RiskManager:
                     adjusted_qty = int(max_risk_amount / risk_per_share)
 
                     violations.append(
-                        f"Risk too high: {risk_percent*100:.2f}% "
-                        f"(max {RISK_LIMITS.max_risk_per_trade*100:.0f}%). "
+                        f"Risk too high: {risk_percent * 100:.2f}% "
+                        f"(max {RISK_LIMITS.max_risk_per_trade * 100:.0f}%). "
                         f"Adjusted quantity from {decision.quantity} to {adjusted_qty}"
                     )
 
                     # Return with adjusted quantity if possible
-                    if adjusted_qty > 0 and not violations[:-1]:  # Only the quantity violation
+                    if (
+                        adjusted_qty > 0 and not violations[:-1]
+                    ):  # Only the quantity violation
                         return RiskValidationResult(
                             valid=True,
-                            message=f"Quantity adjusted to {adjusted_qty} to meet risk limits",
+                            message=(
+                                f"Quantity adjusted to {adjusted_qty} "
+                                f"to meet risk limits"
+                            ),
                             adjusted_quantity=adjusted_qty,
                             violations=[violations[-1]],
                         )
@@ -138,15 +147,15 @@ class RiskManager:
             if decision.quantity and current_price > 0:
                 order_value = decision.quantity * current_price
                 current_exposure = sum(
-                    float(getattr(p, 'market_value', 0) or 0) for p in current_positions
+                    float(getattr(p, "market_value", 0) or 0) for p in current_positions
                 )
                 total_exposure = current_exposure + order_value
                 exposure_percent = total_exposure / equity
 
                 if exposure_percent > RISK_LIMITS.max_exposure:
                     violations.append(
-                        f"Would exceed max exposure: {exposure_percent*100:.1f}% "
-                        f"(max {RISK_LIMITS.max_exposure*100:.0f}%)"
+                        f"Would exceed max exposure: {exposure_percent * 100:.1f}% "
+                        f"(max {RISK_LIMITS.max_exposure * 100:.0f}%)"
                     )
 
         # Return result
@@ -178,17 +187,19 @@ class RiskManager:
             if daily_pnl_percent < -RISK_LIMITS.daily_loss_limit:
                 return RiskValidationResult(
                     valid=False,
-                    message=f"Daily loss limit reached: {daily_pnl_percent*100:.2f}% "
-                    f"(limit: -{RISK_LIMITS.daily_loss_limit*100:.0f}%)",
+                    message=f"Daily loss limit reached: {daily_pnl_percent * 100:.2f}% "
+                    f"(limit: -{RISK_LIMITS.daily_loss_limit * 100:.0f}%)",
                 )
 
         return RiskValidationResult(valid=True, message="Within daily loss limit")
 
     def check_trading_allowed(self) -> RiskValidationResult:
         """Check if trading is currently allowed based on time."""
-        from config.settings import TRADING_HOURS
         from datetime import timedelta
+
         import pytz
+
+        from config.settings import TRADING_HOURS
 
         now = datetime.now(pytz.timezone("America/New_York"))
         market_open = now.replace(
@@ -216,19 +227,28 @@ class RiskManager:
         if now < buffer_start:
             return RiskValidationResult(
                 valid=False,
-                message=f"No trading in first {TRADING_HOURS.buffer_minutes} minutes of session",
+                message=(
+                    f"No trading in first {TRADING_HOURS.buffer_minutes} "
+                    f"minutes of session"
+                ),
             )
 
         if now > buffer_end:
             return RiskValidationResult(
                 valid=False,
-                message=f"No trading in last {TRADING_HOURS.buffer_minutes} minutes of session",
+                message=(
+                    f"No trading in last {TRADING_HOURS.buffer_minutes} "
+                    f"minutes of session"
+                ),
             )
 
         return RiskValidationResult(valid=True, message="Trading allowed")
 
     def calculate_position_size(
-        self, current_price: float, stop_loss: float, max_risk_percent: float | None = None
+        self,
+        current_price: float,
+        stop_loss: float,
+        max_risk_percent: float | None = None,
     ) -> int:
         """
         Calculate maximum position size based on risk limits.
@@ -273,10 +293,11 @@ class RiskManager:
 
         # Filter to Position objects with symbols in our list
         valid_positions = [
-            p for p in positions
-            if hasattr(p, 'symbol') and p.symbol in SYMBOLS
+            p for p in positions if hasattr(p, "symbol") and p.symbol in SYMBOLS
         ]
-        current_exposure = sum(float(getattr(p, 'market_value', 0) or 0) for p in valid_positions)
+        current_exposure = sum(
+            float(getattr(p, "market_value", 0) or 0) for p in valid_positions
+        )
         exposure_percent = (current_exposure / equity * 100) if equity > 0 else 0
 
         # Daily P&L
@@ -284,7 +305,11 @@ class RiskManager:
         daily_pnl_percent = 0.0
         if self.daily_pnl_start:
             daily_pnl = equity - self.daily_pnl_start
-            daily_pnl_percent = (daily_pnl / self.daily_pnl_start * 100) if self.daily_pnl_start > 0 else 0
+            daily_pnl_percent = (
+                (daily_pnl / self.daily_pnl_start * 100)
+                if self.daily_pnl_start > 0
+                else 0
+            )
 
         return {
             "agent": self.agent_name,

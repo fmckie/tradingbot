@@ -10,9 +10,9 @@ Usage:
 
 import asyncio
 import os
-import json
-from dotenv import load_dotenv
+
 import httpx
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -59,7 +59,9 @@ class GrokAPIDiagnostics:
         if self.api_key.startswith("xai-"):
             self.log("PASS", "API key has expected 'xai-' prefix")
         else:
-            self.log("WARN", f"API key prefix: '{self.api_key[:4]}...' (expected 'xai-')")
+            self.log(
+                "WARN", f"API key prefix: '{self.api_key[:4]}...' (expected 'xai-')"
+            )
             self.log("INFO", "Key may still work, but format is unusual")
 
         # Check length (typical xAI keys are ~50+ chars)
@@ -67,7 +69,9 @@ class GrokAPIDiagnostics:
             self.log("WARN", f"API key seems short ({len(self.api_key)} chars)")
             return False
         else:
-            self.log("PASS", f"API key length looks reasonable ({len(self.api_key)} chars)")
+            self.log(
+                "PASS", f"API key length looks reasonable ({len(self.api_key)} chars)"
+            )
 
         return True
 
@@ -91,7 +95,9 @@ class GrokAPIDiagnostics:
                     self.log("PASS", "Successfully connected to xAI API")
                     models = response.json()
                     if "data" in models:
-                        model_ids = [m.get("id", "unknown") for m in models.get("data", [])]
+                        model_ids = [
+                            m.get("id", "unknown") for m in models.get("data", [])
+                        ]
                         self.log("INFO", f"Available models: {model_ids}")
                     return True
                 elif response.status_code == 401:
@@ -145,14 +151,20 @@ class GrokAPIDiagnostics:
 
                 if response.status_code == 200:
                     result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    content = (
+                        result.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")
+                    )
                     self.log("PASS", f"Chat completion successful with {model}")
                     self.log("INFO", f"Response: '{content}'")
                     return True
                 elif response.status_code == 400:
                     error = response.json()
-                    error_msg = error.get("error", {}).get("message", response.text[:500])
-                    self.log("FAIL", f"400 Bad Request - likely invalid model name")
+                    error_msg = error.get("error", {}).get(
+                        "message", response.text[:500]
+                    )
+                    self.log("FAIL", "400 Bad Request - likely invalid model name")
                     self.log("INFO", f"Error: {error_msg}")
                     return False
                 elif response.status_code == 401:
@@ -160,7 +172,9 @@ class GrokAPIDiagnostics:
                     self.log("INFO", f"Response: {response.text[:500]}")
                     return False
                 elif response.status_code == 429:
-                    self.log("WARN", "429 Rate Limited - API key works but hit rate limit")
+                    self.log(
+                        "WARN", "429 Rate Limited - API key works but hit rate limit"
+                    )
                     self.log("INFO", f"Response: {response.text[:500]}")
                     return True  # Key works, just rate limited
                 else:
@@ -195,12 +209,12 @@ class GrokAPIDiagnostics:
                         "properties": {
                             "symbol": {
                                 "type": "string",
-                                "description": "Stock ticker symbol"
+                                "description": "Stock ticker symbol",
                             }
                         },
-                        "required": ["symbol"]
-                    }
-                }
+                        "required": ["symbol"],
+                    },
+                },
             }
         ]
 
@@ -215,7 +229,13 @@ class GrokAPIDiagnostics:
                     json={
                         "model": model,
                         "messages": [
-                            {"role": "user", "content": "What is the current price of GOOGL? Use the get_stock_price tool."}
+                            {
+                                "role": "user",
+                                "content": (
+                                    "What is the current price of GOOGL? "
+                                    "Use the get_stock_price tool."
+                                ),
+                            }
                         ],
                         "tools": tools,
                         "tool_choice": "auto",
@@ -232,12 +252,22 @@ class GrokAPIDiagnostics:
                     if tool_calls:
                         self.log("PASS", f"Tool calling works with {model}")
                         for tc in tool_calls:
-                            self.log("INFO", f"Tool called: {tc.get('function', {}).get('name')}")
-                            self.log("INFO", f"Arguments: {tc.get('function', {}).get('arguments')}")
+                            self.log(
+                                "INFO",
+                                f"Tool called: {tc.get('function', {}).get('name')}",
+                            )
+                            self.log(
+                                "INFO",
+                                f"Arguments: {tc.get('function', {}).get('arguments')}",
+                            )
                         return True
                     else:
                         self.log("WARN", "API responded but didn't use the tool")
-                        self.log("INFO", f"Response content: {message.get('content', 'empty')[:200]}")
+                        self.log(
+                            "INFO",
+                            "Response content: "
+                            f"{message.get('content', 'empty')[:200]}",
+                        )
                         return True  # API works, just didn't use tool
                 else:
                     self.log("FAIL", f"Status {response.status_code}")
@@ -276,7 +306,9 @@ class GrokAPIDiagnostics:
                     elif response.status_code == 429:
                         self.log("WARN", f"Model '{model}' works but rate limited")
                     else:
-                        self.log("INFO", f"Model '{model}' returned {response.status_code}")
+                        self.log(
+                            "INFO", f"Model '{model}' returned {response.status_code}"
+                        )
 
             except Exception as e:
                 self.log("INFO", f"Model '{model}' failed: {e}")

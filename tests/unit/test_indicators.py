@@ -6,20 +6,21 @@ Tests cover:
 - Insufficient bars handling
 - Edge cases for each indicator
 """
-import pytest
-import pandas as pd
+
+from datetime import datetime
+from unittest.mock import Mock
+
 import numpy as np
-from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch
+import pandas as pd
+import pytest
 
 from data.indicators import (
-    TechnicalIndicators,
-    MACDResult,
     BollingerResult,
     IndicatorSnapshot,
+    MACDResult,
+    TechnicalIndicators,
 )
 from data.market_data import MarketDataProvider
-
 
 # ==================== Fixtures ====================
 
@@ -46,14 +47,16 @@ def sample_ohlcv_df():
     # Generate realistic price data with trend
     close_prices = 100 + np.cumsum(np.random.randn(n_bars) * 0.5)
 
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": close_prices - np.random.rand(n_bars) * 0.5,
-        "high": close_prices + np.random.rand(n_bars) * 1.0,
-        "low": close_prices - np.random.rand(n_bars) * 1.0,
-        "close": close_prices,
-        "volume": np.random.randint(10000, 100000, n_bars),
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": close_prices - np.random.rand(n_bars) * 0.5,
+            "high": close_prices + np.random.rand(n_bars) * 1.0,
+            "low": close_prices - np.random.rand(n_bars) * 1.0,
+            "close": close_prices,
+            "volume": np.random.randint(10000, 100000, n_bars),
+        }
+    )
 
 
 @pytest.fixture
@@ -66,14 +69,16 @@ def empty_df():
 def insufficient_bars_df():
     """Create DataFrame with too few bars for most indicators."""
     dates = pd.date_range(start="2024-01-01", periods=5, freq="h")
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": [100.0, 101.0, 102.0, 101.5, 102.5],
-        "high": [101.0, 102.0, 103.0, 102.5, 103.5],
-        "low": [99.0, 100.0, 101.0, 100.5, 101.5],
-        "close": [100.5, 101.5, 102.5, 102.0, 103.0],
-        "volume": [10000, 12000, 11000, 13000, 14000],
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": [100.0, 101.0, 102.0, 101.5, 102.5],
+            "high": [101.0, 102.0, 103.0, 102.5, 103.5],
+            "low": [99.0, 100.0, 101.0, 100.5, 101.5],
+            "close": [100.5, 101.5, 102.5, 102.0, 103.0],
+            "volume": [10000, 12000, 11000, 13000, 14000],
+        }
+    )
 
 
 @pytest.fixture
@@ -85,14 +90,16 @@ def trending_up_df():
     # Clear uptrend
     close_prices = np.linspace(100, 150, n_bars) + np.random.randn(n_bars) * 0.5
 
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": close_prices - 0.5,
-        "high": close_prices + 1.0,
-        "low": close_prices - 1.0,
-        "close": close_prices,
-        "volume": np.random.randint(10000, 100000, n_bars),
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": close_prices - 0.5,
+            "high": close_prices + 1.0,
+            "low": close_prices - 1.0,
+            "close": close_prices,
+            "volume": np.random.randint(10000, 100000, n_bars),
+        }
+    )
 
 
 @pytest.fixture
@@ -104,14 +111,16 @@ def trending_down_df():
     # Clear downtrend
     close_prices = np.linspace(150, 100, n_bars) + np.random.randn(n_bars) * 0.5
 
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": close_prices + 0.5,
-        "high": close_prices + 1.0,
-        "low": close_prices - 1.0,
-        "close": close_prices,
-        "volume": np.random.randint(10000, 100000, n_bars),
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": close_prices + 0.5,
+            "high": close_prices + 1.0,
+            "low": close_prices - 1.0,
+            "close": close_prices,
+            "volume": np.random.randint(10000, 100000, n_bars),
+        }
+    )
 
 
 @pytest.fixture
@@ -123,14 +132,16 @@ def high_volatility_df():
     # High volatility - large price swings
     close_prices = 100 + np.cumsum(np.random.randn(n_bars) * 3)
 
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": close_prices - np.random.rand(n_bars) * 2,
-        "high": close_prices + np.random.rand(n_bars) * 5,
-        "low": close_prices - np.random.rand(n_bars) * 5,
-        "close": close_prices,
-        "volume": np.random.randint(50000, 200000, n_bars),
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": close_prices - np.random.rand(n_bars) * 2,
+            "high": close_prices + np.random.rand(n_bars) * 5,
+            "low": close_prices - np.random.rand(n_bars) * 5,
+            "close": close_prices,
+            "volume": np.random.randint(50000, 200000, n_bars),
+        }
+    )
 
 
 # ==================== VWAP Tests ====================
@@ -139,7 +150,9 @@ def high_volatility_df():
 class TestCalculateVWAP:
     """Test VWAP calculation."""
 
-    def test_vwap_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_vwap_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """VWAP should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -156,7 +169,9 @@ class TestCalculateVWAP:
 
         assert result == 0.0
 
-    def test_vwap_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_vwap_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """VWAP should return 0.0 for insufficient bars."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -164,7 +179,9 @@ class TestCalculateVWAP:
 
         assert result == 0.0
 
-    def test_vwap_requests_full_day_bars(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_vwap_requests_full_day_bars(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """VWAP should request 390 1-minute bars (full trading day)."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -179,7 +196,9 @@ class TestCalculateVWAP:
 class TestCalculateRSI:
     """Test RSI calculation."""
 
-    def test_rsi_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_rsi_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """RSI should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -187,7 +206,9 @@ class TestCalculateRSI:
 
         assert 0 <= result <= 100
 
-    def test_rsi_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_rsi_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """RSI should return 50.0 (neutral) for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -228,7 +249,9 @@ class TestCalculateRSI:
 class TestCalculateMACD:
     """Test MACD calculation."""
 
-    def test_macd_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_macd_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """MACD should return MACDResult with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -239,7 +262,9 @@ class TestCalculateMACD:
         assert isinstance(result.signal_line, float)
         assert isinstance(result.histogram, float)
 
-    def test_macd_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_macd_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """MACD should return zeros for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -249,7 +274,9 @@ class TestCalculateMACD:
         assert result.signal_line == 0.0
         assert result.histogram == 0.0
 
-    def test_macd_histogram_positive_in_uptrend(self, indicators, mock_data_provider, trending_up_df):
+    def test_macd_histogram_positive_in_uptrend(
+        self, indicators, mock_data_provider, trending_up_df
+    ):
         """MACD line should be positive in uptrend."""
         mock_data_provider.get_bars.return_value = trending_up_df
 
@@ -259,7 +286,9 @@ class TestCalculateMACD:
         # Histogram can lag and be slightly negative even in uptrend
         assert result.macd_line > 0
 
-    def test_macd_histogram_negative_in_downtrend(self, indicators, mock_data_provider, trending_down_df):
+    def test_macd_histogram_negative_in_downtrend(
+        self, indicators, mock_data_provider, trending_down_df
+    ):
         """MACD histogram should be negative in downtrend."""
         mock_data_provider.get_bars.return_value = trending_down_df
 
@@ -268,7 +297,9 @@ class TestCalculateMACD:
         # In strong downtrend, histogram should be negative
         assert result.histogram < 0
 
-    def test_macd_custom_parameters(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_macd_custom_parameters(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """MACD should work with custom parameters."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -283,7 +314,9 @@ class TestCalculateMACD:
 class TestCalculateBollingerBands:
     """Test Bollinger Bands calculation."""
 
-    def test_bollinger_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_bollinger_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Bollinger Bands should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -293,7 +326,9 @@ class TestCalculateBollingerBands:
         assert result.upper > result.middle > result.lower
         assert result.bandwidth > 0
 
-    def test_bollinger_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_bollinger_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """Bollinger Bands should return defaults for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -316,7 +351,9 @@ class TestCalculateBollingerBands:
         assert result.upper == 0.0
         assert result.bandwidth == 0.0
 
-    def test_bollinger_percent_b_range(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_bollinger_percent_b_range(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Percent B can be outside 0-1 when price is outside bands."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -325,7 +362,9 @@ class TestCalculateBollingerBands:
         # Percent B is typically between 0-1 but can be outside
         assert isinstance(result.percent_b, float)
 
-    def test_bollinger_high_volatility(self, indicators, mock_data_provider, high_volatility_df):
+    def test_bollinger_high_volatility(
+        self, indicators, mock_data_provider, high_volatility_df
+    ):
         """Bollinger Bands should be wider with high volatility."""
         mock_data_provider.get_bars.return_value = high_volatility_df
 
@@ -342,7 +381,9 @@ class TestCalculateBollingerBands:
 class TestCalculateATR:
     """Test Average True Range calculation."""
 
-    def test_atr_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_atr_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """ATR should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -350,7 +391,9 @@ class TestCalculateATR:
 
         assert result > 0
 
-    def test_atr_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_atr_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """ATR should return 0.0 for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -358,7 +401,9 @@ class TestCalculateATR:
 
         assert result == 0.0
 
-    def test_atr_higher_with_volatility(self, indicators, mock_data_provider, high_volatility_df):
+    def test_atr_higher_with_volatility(
+        self, indicators, mock_data_provider, high_volatility_df
+    ):
         """ATR should be higher with high volatility."""
         high_vol_atr = None
         low_vol_atr = None
@@ -370,14 +415,16 @@ class TestCalculateATR:
         # Create low volatility data
         n_bars = 100
         dates = pd.date_range(start="2024-01-01", periods=n_bars, freq="h")
-        low_vol_df = pd.DataFrame({
-            "timestamp": dates,
-            "open": [100.0] * n_bars,
-            "high": [100.5] * n_bars,
-            "low": [99.5] * n_bars,
-            "close": [100.0] * n_bars,
-            "volume": [10000] * n_bars,
-        })
+        low_vol_df = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "open": [100.0] * n_bars,
+                "high": [100.5] * n_bars,
+                "low": [99.5] * n_bars,
+                "close": [100.0] * n_bars,
+                "volume": [10000] * n_bars,
+            }
+        )
         mock_data_provider.get_bars.return_value = low_vol_df
         low_vol_atr = indicators.calculate_atr("GOOGL")
 
@@ -390,7 +437,9 @@ class TestCalculateATR:
 class TestCalculateEMA:
     """Test Exponential Moving Average calculation."""
 
-    def test_ema_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_ema_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """EMA should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -398,7 +447,9 @@ class TestCalculateEMA:
 
         assert result > 0
 
-    def test_ema_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_ema_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """EMA should return last price for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -416,7 +467,9 @@ class TestCalculateEMA:
 
         assert result == 0.0
 
-    def test_ema_shorter_faster_in_uptrend(self, indicators, mock_data_provider, trending_up_df):
+    def test_ema_shorter_faster_in_uptrend(
+        self, indicators, mock_data_provider, trending_up_df
+    ):
         """Shorter EMA should be above longer EMA in uptrend."""
         mock_data_provider.get_bars.return_value = trending_up_df
 
@@ -433,7 +486,9 @@ class TestCalculateEMA:
 class TestCalculateSMA:
     """Test Simple Moving Average calculation."""
 
-    def test_sma_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_sma_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """SMA should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -441,7 +496,9 @@ class TestCalculateSMA:
 
         assert result > 0
 
-    def test_sma_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_sma_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """SMA should return last price for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -463,14 +520,16 @@ class TestCalculateSMA:
         # Need more data for SMA 200
         n_bars = 250
         dates = pd.date_range(start="2024-01-01", periods=n_bars, freq="h")
-        long_trend_df = pd.DataFrame({
-            "timestamp": dates,
-            "open": np.linspace(100, 200, n_bars),
-            "high": np.linspace(101, 201, n_bars),
-            "low": np.linspace(99, 199, n_bars),
-            "close": np.linspace(100, 200, n_bars),
-            "volume": [10000] * n_bars,
-        })
+        long_trend_df = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "open": np.linspace(100, 200, n_bars),
+                "high": np.linspace(101, 201, n_bars),
+                "low": np.linspace(99, 199, n_bars),
+                "close": np.linspace(100, 200, n_bars),
+                "volume": [10000] * n_bars,
+            }
+        )
         mock_data_provider.get_bars.return_value = long_trend_df
 
         sma_50 = indicators.calculate_sma("GOOGL", period=50)
@@ -486,7 +545,9 @@ class TestCalculateSMA:
 class TestCalculateStochastic:
     """Test Stochastic Oscillator calculation."""
 
-    def test_stochastic_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_stochastic_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Stochastic should return %K and %D values."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -495,7 +556,9 @@ class TestCalculateStochastic:
         assert 0 <= k <= 100
         assert 0 <= d <= 100
 
-    def test_stochastic_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_stochastic_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """Stochastic should return 50.0, 50.0 for insufficient data."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -504,7 +567,9 @@ class TestCalculateStochastic:
         assert k == 50.0
         assert d == 50.0
 
-    def test_stochastic_high_in_uptrend(self, indicators, mock_data_provider, trending_up_df):
+    def test_stochastic_high_in_uptrend(
+        self, indicators, mock_data_provider, trending_up_df
+    ):
         """Stochastic should be high in uptrend (near highs)."""
         mock_data_provider.get_bars.return_value = trending_up_df
 
@@ -513,7 +578,9 @@ class TestCalculateStochastic:
         # In uptrend, stochastic should be elevated
         assert k > 50
 
-    def test_stochastic_low_in_downtrend(self, indicators, mock_data_provider, trending_down_df):
+    def test_stochastic_low_in_downtrend(
+        self, indicators, mock_data_provider, trending_down_df
+    ):
         """Stochastic should be low in downtrend (near lows)."""
         mock_data_provider.get_bars.return_value = trending_down_df
 
@@ -529,7 +596,9 @@ class TestCalculateStochastic:
 class TestCalculateVolumeSMA:
     """Test Volume SMA calculation."""
 
-    def test_volume_sma_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_volume_sma_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Volume SMA should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -537,7 +606,9 @@ class TestCalculateVolumeSMA:
 
         assert result > 0
 
-    def test_volume_sma_with_insufficient_data(self, indicators, mock_data_provider, insufficient_bars_df):
+    def test_volume_sma_with_insufficient_data(
+        self, indicators, mock_data_provider, insufficient_bars_df
+    ):
         """Volume SMA should return mean of available bars."""
         mock_data_provider.get_bars.return_value = insufficient_bars_df
 
@@ -562,7 +633,9 @@ class TestCalculateVolumeSMA:
 class TestCalculatePriceChange:
     """Test price change calculation."""
 
-    def test_price_change_with_sufficient_data(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_price_change_with_sufficient_data(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Price change should be calculated with sufficient data."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -572,17 +645,21 @@ class TestCalculatePriceChange:
 
     def test_price_change_with_insufficient_data(self, indicators, mock_data_provider):
         """Price change should return 0.0 with insufficient data."""
-        single_bar = pd.DataFrame({
-            "timestamp": [datetime.now()],
-            "close": [100.0],
-        })
+        single_bar = pd.DataFrame(
+            {
+                "timestamp": [datetime.now()],
+                "close": [100.0],
+            }
+        )
         mock_data_provider.get_bars.return_value = single_bar
 
         result = indicators.calculate_price_change("GOOGL", periods=1)
 
         assert result == 0.0
 
-    def test_price_change_positive_in_uptrend(self, indicators, mock_data_provider, trending_up_df):
+    def test_price_change_positive_in_uptrend(
+        self, indicators, mock_data_provider, trending_up_df
+    ):
         """Price change should be positive in uptrend."""
         mock_data_provider.get_bars.return_value = trending_up_df
 
@@ -590,7 +667,9 @@ class TestCalculatePriceChange:
 
         assert result > 0
 
-    def test_price_change_negative_in_downtrend(self, indicators, mock_data_provider, trending_down_df):
+    def test_price_change_negative_in_downtrend(
+        self, indicators, mock_data_provider, trending_down_df
+    ):
         """Price change should be negative in downtrend."""
         mock_data_provider.get_bars.return_value = trending_down_df
 
@@ -605,7 +684,9 @@ class TestCalculatePriceChange:
 class TestGetAllIndicators:
     """Test get_all_indicators comprehensive method."""
 
-    def test_returns_indicator_snapshot(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_returns_indicator_snapshot(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Should return IndicatorSnapshot with all indicators."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -614,7 +695,9 @@ class TestGetAllIndicators:
         assert isinstance(result, IndicatorSnapshot)
         assert result.symbol == "GOOGL"
 
-    def test_snapshot_has_all_fields(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_snapshot_has_all_fields(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Snapshot should have all required fields."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -635,7 +718,9 @@ class TestGetAllIndicators:
         assert hasattr(result, "price_change_1h")
         assert hasattr(result, "price_change_1d")
 
-    def test_snapshot_macd_is_macd_result(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_snapshot_macd_is_macd_result(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Snapshot MACD should be MACDResult."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -643,7 +728,9 @@ class TestGetAllIndicators:
 
         assert isinstance(result.macd, MACDResult)
 
-    def test_snapshot_bollinger_is_bollinger_result(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_snapshot_bollinger_is_bollinger_result(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Snapshot Bollinger should be BollingerResult."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -658,7 +745,9 @@ class TestGetAllIndicators:
 class TestFormatIndicatorsForAI:
     """Test format_indicators_for_ai method."""
 
-    def test_format_returns_string(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_format_returns_string(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Should return formatted string."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -667,7 +756,9 @@ class TestFormatIndicatorsForAI:
         assert isinstance(result, str)
         assert "GOOGL" in result
 
-    def test_format_includes_rsi_status(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_format_includes_rsi_status(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Format should include RSI overbought/oversold status."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -677,7 +768,9 @@ class TestFormatIndicatorsForAI:
         # Should have one of these status indicators
         assert any(status in result for status in ["Overbought", "Oversold", "Neutral"])
 
-    def test_format_includes_macd_status(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_format_includes_macd_status(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Format should include MACD bullish/bearish status."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 
@@ -686,7 +779,9 @@ class TestFormatIndicatorsForAI:
         assert "MACD" in result
         assert "Histogram" in result
 
-    def test_format_includes_trend(self, indicators, mock_data_provider, sample_ohlcv_df):
+    def test_format_includes_trend(
+        self, indicators, mock_data_provider, sample_ohlcv_df
+    ):
         """Format should include trend status."""
         mock_data_provider.get_bars.return_value = sample_ohlcv_df
 

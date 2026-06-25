@@ -1,17 +1,24 @@
 """CRUD operations for the learning system (episodes, reflections, learnings)."""
-import json
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, date
-from decimal import Decimal
-from typing import Optional, Any
-from enum import Enum
 
-from .postgres_client import PostgresClient
+# Annotations are evaluated lazily so the `CompetitionScore.date` field can be
+# typed `date | None` despite shadowing the imported `date` type (the new
+# X | None form is evaluated at class-definition time, unlike Optional[date]).
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+from typing import Any, cast
+
 from .json_utils import safe_json_dumps
+from .postgres_client import PostgresClient
 
 
 class OutcomeStatus(Enum):
     """Status of a trading episode outcome."""
+
     PENDING = "pending"
     WIN = "win"
     LOSS = "loss"
@@ -22,47 +29,50 @@ class OutcomeStatus(Enum):
 @dataclass
 class Episode:
     """A single decision cycle episode."""
-    id: Optional[int] = None
+
+    id: int | None = None
     agent_name: str = ""
-    timestamp: Optional[datetime] = None
+    timestamp: datetime | None = None
     market_regime: str = ""
-    symbols_context: dict = field(default_factory=dict)
-    account_state: dict = field(default_factory=dict)
-    decision_made: dict = field(default_factory=dict)
-    outcome_pnl: Optional[Decimal] = None
+    symbols_context: dict[str, Any] = field(default_factory=dict)
+    account_state: dict[str, Any] = field(default_factory=dict)
+    decision_made: dict[str, Any] = field(default_factory=dict)
+    outcome_pnl: Decimal | None = None
     outcome_status: str = OutcomeStatus.PENDING.value
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 @dataclass
 class Reflection:
     """Post-outcome analysis of an episode."""
-    id: Optional[int] = None
-    episode_id: Optional[int] = None
+
+    id: int | None = None
+    episode_id: int | None = None
     agent_name: str = ""
     what_worked: str = ""
     what_failed: str = ""
     lesson_learned: str = ""
     next_time_will: str = ""
-    confidence_adjustment: Optional[Decimal] = None
+    confidence_adjustment: Decimal | None = None
     tags: list[str] = field(default_factory=list)
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 @dataclass
 class Learning:
     """A distilled rule or pattern from experience."""
-    id: Optional[int] = None
+
+    id: int | None = None
     agent_name: str = ""
     category: str = ""  # strategy/indicator/timing/risk
     pattern: str = ""
     insight: str = ""
     success_count: int = 0
     failure_count: int = 0
-    last_validated: Optional[datetime] = None
+    last_validated: datetime | None = None
     is_active: bool = True
     tags: list[str] = field(default_factory=list)
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     @property
     def success_rate(self) -> float:
@@ -76,17 +86,18 @@ class Learning:
 @dataclass
 class CompetitionScore:
     """Daily competition score for an agent."""
-    id: Optional[int] = None
+
+    id: int | None = None
     agent_name: str = ""
-    date: Optional[date] = None
-    starting_equity: Optional[Decimal] = None
-    ending_equity: Optional[Decimal] = None
-    daily_pnl: Optional[Decimal] = None
+    date: date | None = None
+    starting_equity: Decimal | None = None
+    ending_equity: Decimal | None = None
+    daily_pnl: Decimal | None = None
     trades_count: int = 0
     wins: int = 0
     losses: int = 0
-    strategies_used: dict = field(default_factory=dict)
-    top_learning_id: Optional[int] = None
+    strategies_used: dict[str, Any] = field(default_factory=dict)
+    top_learning_id: int | None = None
 
 
 class LearningStore:
@@ -109,20 +120,23 @@ class LearningStore:
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
         """
-        return await PostgresClient.fetchval(
-            query,
-            episode.agent_name,
-            episode.timestamp or datetime.now(),
-            episode.market_regime,
-            safe_json_dumps(episode.symbols_context),
-            safe_json_dumps(episode.account_state),
-            safe_json_dumps(episode.decision_made),
-            episode.outcome_pnl,
-            episode.outcome_status
+        return cast(
+            int,
+            await PostgresClient.fetchval(
+                query,
+                episode.agent_name,
+                episode.timestamp or datetime.now(),
+                episode.market_regime,
+                safe_json_dumps(episode.symbols_context),
+                safe_json_dumps(episode.account_state),
+                safe_json_dumps(episode.decision_made),
+                episode.outcome_pnl,
+                episode.outcome_status,
+            ),
         )
 
     @staticmethod
-    async def get_episode(episode_id: int) -> Optional[Episode]:
+    async def get_episode(episode_id: int) -> Episode | None:
         """Get an episode by ID."""
         query = "SELECT * FROM episodes WHERE id = $1"
         row = await PostgresClient.fetchrow(query, episode_id)
@@ -132,20 +146,24 @@ class LearningStore:
                 agent_name=row["agent_name"],
                 timestamp=row["timestamp"],
                 market_regime=row["market_regime"],
-                symbols_context=json.loads(row["symbols_context"]) if row["symbols_context"] else {},
-                account_state=json.loads(row["account_state"]) if row["account_state"] else {},
-                decision_made=json.loads(row["decision_made"]) if row["decision_made"] else {},
+                symbols_context=json.loads(row["symbols_context"])
+                if row["symbols_context"]
+                else {},
+                account_state=json.loads(row["account_state"])
+                if row["account_state"]
+                else {},
+                decision_made=json.loads(row["decision_made"])
+                if row["decision_made"]
+                else {},
                 outcome_pnl=row["outcome_pnl"],
                 outcome_status=row["outcome_status"],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
         return None
 
     @staticmethod
     async def update_episode_outcome(
-        episode_id: int,
-        outcome_pnl: Decimal,
-        outcome_status: str
+        episode_id: int, outcome_pnl: Decimal, outcome_status: str
     ) -> None:
         """Update an episode's outcome after trade closes."""
         query = """
@@ -156,10 +174,7 @@ class LearningStore:
         await PostgresClient.execute(query, outcome_pnl, outcome_status, episode_id)
 
     @staticmethod
-    async def get_recent_episodes(
-        agent_name: str,
-        limit: int = 20
-    ) -> list[Episode]:
+    async def get_recent_episodes(agent_name: str, limit: int = 20) -> list[Episode]:
         """Get recent episodes for an agent."""
         query = """
             SELECT * FROM episodes
@@ -174,21 +189,25 @@ class LearningStore:
                 agent_name=row["agent_name"],
                 timestamp=row["timestamp"],
                 market_regime=row["market_regime"],
-                symbols_context=json.loads(row["symbols_context"]) if row["symbols_context"] else {},
-                account_state=json.loads(row["account_state"]) if row["account_state"] else {},
-                decision_made=json.loads(row["decision_made"]) if row["decision_made"] else {},
+                symbols_context=json.loads(row["symbols_context"])
+                if row["symbols_context"]
+                else {},
+                account_state=json.loads(row["account_state"])
+                if row["account_state"]
+                else {},
+                decision_made=json.loads(row["decision_made"])
+                if row["decision_made"]
+                else {},
                 outcome_pnl=row["outcome_pnl"],
                 outcome_status=row["outcome_status"],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
             for row in rows
         ]
 
     @staticmethod
     async def get_episodes_by_regime(
-        agent_name: str,
-        market_regime: str,
-        limit: int = 10
+        agent_name: str, market_regime: str, limit: int = 10
     ) -> list[Episode]:
         """Get episodes matching a market regime."""
         query = """
@@ -197,19 +216,27 @@ class LearningStore:
             ORDER BY timestamp DESC
             LIMIT $3
         """
-        rows = await PostgresClient.fetch(query, agent_name, f"%{market_regime}%", limit)
+        rows = await PostgresClient.fetch(
+            query, agent_name, f"%{market_regime}%", limit
+        )
         return [
             Episode(
                 id=row["id"],
                 agent_name=row["agent_name"],
                 timestamp=row["timestamp"],
                 market_regime=row["market_regime"],
-                symbols_context=json.loads(row["symbols_context"]) if row["symbols_context"] else {},
-                account_state=json.loads(row["account_state"]) if row["account_state"] else {},
-                decision_made=json.loads(row["decision_made"]) if row["decision_made"] else {},
+                symbols_context=json.loads(row["symbols_context"])
+                if row["symbols_context"]
+                else {},
+                account_state=json.loads(row["account_state"])
+                if row["account_state"]
+                else {},
+                decision_made=json.loads(row["decision_made"])
+                if row["decision_made"]
+                else {},
                 outcome_pnl=row["outcome_pnl"],
                 outcome_status=row["outcome_status"],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
             for row in rows
         ]
@@ -226,20 +253,23 @@ class LearningStore:
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
         """
-        return await PostgresClient.fetchval(
-            query,
-            reflection.episode_id,
-            reflection.agent_name,
-            reflection.what_worked,
-            reflection.what_failed,
-            reflection.lesson_learned,
-            reflection.next_time_will,
-            reflection.confidence_adjustment,
-            reflection.tags
+        return cast(
+            int,
+            await PostgresClient.fetchval(
+                query,
+                reflection.episode_id,
+                reflection.agent_name,
+                reflection.what_worked,
+                reflection.what_failed,
+                reflection.lesson_learned,
+                reflection.next_time_will,
+                reflection.confidence_adjustment,
+                reflection.tags,
+            ),
         )
 
     @staticmethod
-    async def get_reflection(reflection_id: int) -> Optional[Reflection]:
+    async def get_reflection(reflection_id: int) -> Reflection | None:
         """Get a reflection by ID."""
         query = "SELECT * FROM reflections WHERE id = $1"
         row = await PostgresClient.fetchrow(query, reflection_id)
@@ -254,15 +284,13 @@ class LearningStore:
                 next_time_will=row["next_time_will"],
                 confidence_adjustment=row["confidence_adjustment"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
         return None
 
     @staticmethod
     async def get_reflections_by_tags(
-        agent_name: str,
-        tags: list[str],
-        limit: int = 10
+        agent_name: str, tags: list[str], limit: int = 10
     ) -> list[Reflection]:
         """Get reflections matching any of the given tags."""
         query = """
@@ -283,7 +311,7 @@ class LearningStore:
                 next_time_will=row["next_time_will"],
                 confidence_adjustment=row["confidence_adjustment"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
             for row in rows
         ]
@@ -300,21 +328,24 @@ class LearningStore:
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id
         """
-        return await PostgresClient.fetchval(
-            query,
-            learning.agent_name,
-            learning.category,
-            learning.pattern,
-            learning.insight,
-            learning.success_count,
-            learning.failure_count,
-            learning.last_validated,
-            learning.is_active,
-            learning.tags
+        return cast(
+            int,
+            await PostgresClient.fetchval(
+                query,
+                learning.agent_name,
+                learning.category,
+                learning.pattern,
+                learning.insight,
+                learning.success_count,
+                learning.failure_count,
+                learning.last_validated,
+                learning.is_active,
+                learning.tags,
+            ),
         )
 
     @staticmethod
-    async def get_learning(learning_id: int) -> Optional[Learning]:
+    async def get_learning(learning_id: int) -> Learning | None:
         """Get a learning by ID."""
         query = "SELECT * FROM learnings WHERE id = $1"
         row = await PostgresClient.fetchrow(query, learning_id)
@@ -330,15 +361,13 @@ class LearningStore:
                 last_validated=row["last_validated"],
                 is_active=row["is_active"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
         return None
 
     @staticmethod
     async def get_learnings_by_tags(
-        agent_name: str,
-        tags: list[str],
-        limit: int = 10
+        agent_name: str, tags: list[str], limit: int = 10
     ) -> list[Learning]:
         """Get active learnings matching any of the given tags."""
         query = """
@@ -360,16 +389,14 @@ class LearningStore:
                 last_validated=row["last_validated"],
                 is_active=row["is_active"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
             for row in rows
         ]
 
     @staticmethod
     async def get_learnings_by_category(
-        agent_name: str,
-        category: str,
-        limit: int = 10
+        agent_name: str, category: str, limit: int = 10
     ) -> list[Learning]:
         """Get active learnings by category."""
         query = """
@@ -391,16 +418,13 @@ class LearningStore:
                 last_validated=row["last_validated"],
                 is_active=row["is_active"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
             for row in rows
         ]
 
     @staticmethod
-    async def get_top_learnings(
-        agent_name: str,
-        limit: int = 10
-    ) -> list[Learning]:
+    async def get_top_learnings(agent_name: str, limit: int = 10) -> list[Learning]:
         """Get top performing active learnings."""
         query = """
             SELECT * FROM learnings
@@ -421,7 +445,7 @@ class LearningStore:
                 last_validated=row["last_validated"],
                 is_active=row["is_active"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
             for row in rows
         ]
@@ -454,10 +478,8 @@ class LearningStore:
 
     @staticmethod
     async def find_similar_learning(
-        agent_name: str,
-        pattern: str,
-        tags: list[str]
-    ) -> Optional[Learning]:
+        agent_name: str, pattern: str, tags: list[str]
+    ) -> Learning | None:
         """Find an existing learning with similar pattern and tags."""
         query = """
             SELECT * FROM learnings
@@ -480,7 +502,7 @@ class LearningStore:
                 last_validated=row["last_validated"],
                 is_active=row["is_active"],
                 tags=row["tags"] or [],
-                created_at=row["created_at"]
+                created_at=row["created_at"],
             )
         return None
 
@@ -488,9 +510,8 @@ class LearningStore:
 
     @staticmethod
     async def get_position_entry_details(
-        agent_name: str,
-        symbol: str
-    ) -> Optional[dict]:
+        agent_name: str, symbol: str
+    ) -> dict[str, Any] | None:
         """
         Get the entry details (stop/TP) for a current open position.
         Looks up the most recent BUY decision for this symbol.
@@ -506,7 +527,11 @@ class LearningStore:
         """
         row = await PostgresClient.fetchrow(query, agent_name, symbol)
         if row and row["decision_made"]:
-            decision = json.loads(row["decision_made"]) if isinstance(row["decision_made"], str) else row["decision_made"]
+            decision = (
+                json.loads(row["decision_made"])
+                if isinstance(row["decision_made"], str)
+                else row["decision_made"]
+            )
             return {
                 "stop_loss": decision.get("stop_loss"),
                 "take_profit": decision.get("take_profit"),
@@ -517,10 +542,8 @@ class LearningStore:
 
     @staticmethod
     async def get_symbol_trade_history(
-        agent_name: str,
-        symbol: str,
-        limit: int = 50
-    ) -> dict:
+        agent_name: str, symbol: str, limit: int = 50
+    ) -> dict[str, Any]:
         """
         Get trading history and statistics for a specific symbol.
         Returns: total_trades, wins, losses, win_rate, avg_pnl
@@ -530,7 +553,8 @@ class LearningStore:
                 COUNT(*) as total_trades,
                 COUNT(CASE WHEN outcome_status = 'win' THEN 1 END) as wins,
                 COUNT(CASE WHEN outcome_status = 'loss' THEN 1 END) as losses,
-                AVG(CASE WHEN outcome_pnl IS NOT NULL THEN outcome_pnl ELSE 0 END) as avg_pnl,
+                AVG(CASE WHEN outcome_pnl IS NOT NULL THEN outcome_pnl ELSE 0 END)
+                    as avg_pnl,
                 MAX(outcome_pnl) as best_trade,
                 MIN(outcome_pnl) as worst_trade
             FROM episodes
@@ -552,7 +576,9 @@ class LearningStore:
                 "win_rate": (wins / total * 100) if total > 0 else 0.0,
                 "avg_pnl": float(row["avg_pnl"] or 0),
                 "best_trade": float(row["best_trade"]) if row["best_trade"] else None,
-                "worst_trade": float(row["worst_trade"]) if row["worst_trade"] else None,
+                "worst_trade": float(row["worst_trade"])
+                if row["worst_trade"]
+                else None,
             }
         return {
             "total_trades": 0,
@@ -585,24 +611,26 @@ class LearningStore:
                 top_learning_id = EXCLUDED.top_learning_id
             RETURNING id
         """
-        return await PostgresClient.fetchval(
-            query,
-            score.agent_name,
-            score.date or date.today(),
-            score.starting_equity,
-            score.ending_equity,
-            score.daily_pnl,
-            score.trades_count,
-            score.wins,
-            score.losses,
-            safe_json_dumps(score.strategies_used),
-            score.top_learning_id
+        return cast(
+            int,
+            await PostgresClient.fetchval(
+                query,
+                score.agent_name,
+                score.date or date.today(),
+                score.starting_equity,
+                score.ending_equity,
+                score.daily_pnl,
+                score.trades_count,
+                score.wins,
+                score.losses,
+                safe_json_dumps(score.strategies_used),
+                score.top_learning_id,
+            ),
         )
 
     @staticmethod
     async def get_competition_history(
-        agent_name: str,
-        days: int = 30
+        agent_name: str, days: int = 30
     ) -> list[CompetitionScore]:
         """Get competition score history."""
         query = """
@@ -623,8 +651,10 @@ class LearningStore:
                 trades_count=row["trades_count"],
                 wins=row["wins"],
                 losses=row["losses"],
-                strategies_used=json.loads(row["strategies_used"]) if row["strategies_used"] else {},
-                top_learning_id=row["top_learning_id"]
+                strategies_used=json.loads(row["strategies_used"])
+                if row["strategies_used"]
+                else {},
+                top_learning_id=row["top_learning_id"],
             )
             for row in rows
         ]
@@ -649,8 +679,10 @@ class LearningStore:
                 trades_count=row["trades_count"],
                 wins=row["wins"],
                 losses=row["losses"],
-                strategies_used=json.loads(row["strategies_used"]) if row["strategies_used"] else {},
-                top_learning_id=row["top_learning_id"]
+                strategies_used=json.loads(row["strategies_used"])
+                if row["strategies_used"]
+                else {},
+                top_learning_id=row["top_learning_id"],
             )
             for row in rows
         ]

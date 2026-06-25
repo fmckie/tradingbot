@@ -1,14 +1,14 @@
 """Trade and decision logging for the competition."""
-import json
-import os
-from datetime import datetime
-from dataclasses import dataclass, asdict
-from typing import Optional
-import sqlite3
-from pathlib import Path
 
+import json
+import sqlite3
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from agents.base_agent import TradingDecision
 from config.settings import DATABASE_PATH, LOG_DIR
-from agents.base_agent import TradingDecision, ActionType, StrategyType
 from execution.order_executor import ExecutionResult
 
 
@@ -19,16 +19,16 @@ class TradeLog:
     timestamp: str
     agent: str
     action: str
-    symbol: Optional[str]
-    quantity: Optional[int]
-    price: Optional[float]
-    stop_loss: Optional[float]
-    take_profit: Optional[float]
+    symbol: str | None
+    quantity: int | None
+    price: float | None
+    stop_loss: float | None
+    take_profit: float | None
     strategy: str
     reasoning: str
     success: bool
     message: str
-    order_id: Optional[str]
+    order_id: str | None
 
 
 @dataclass
@@ -40,8 +40,8 @@ class DecisionLog:
     action: str
     strategy: str
     reasoning: str
-    tool_calls: list
-    market_context: dict
+    tool_calls: list[Any]
+    market_context: dict[str, Any]
 
 
 class TradeLogger:
@@ -51,13 +51,13 @@ class TradeLogger:
     Uses SQLite for persistent storage and JSON for detailed logs.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.db_path = DATABASE_PATH
         self.log_dir = Path(LOG_DIR)
         self.log_dir.mkdir(exist_ok=True)
         self._init_database()
 
-    def _init_database(self):
+    def _init_database(self) -> None:
         """Initialize SQLite database tables."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -126,8 +126,8 @@ class TradeLogger:
         self,
         agent: str,
         decision: TradingDecision,
-        market_context: dict,
-    ):
+        market_context: dict[str, Any],
+    ) -> None:
         """Log a trading decision (including HOLDs)."""
         log_entry = DecisionLog(
             timestamp=decision.timestamp.isoformat(),
@@ -145,7 +145,10 @@ class TradeLogger:
 
         cursor.execute(
             """
-            INSERT INTO decisions (timestamp, agent, action, strategy, reasoning, tool_calls, market_context)
+            INSERT INTO decisions (
+                timestamp, agent, action, strategy, reasoning,
+                tool_calls, market_context
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
             (
@@ -170,8 +173,8 @@ class TradeLogger:
         agent: str,
         decision: TradingDecision,
         result: ExecutionResult,
-        price: Optional[float] = None,
-    ):
+        price: float | None = None,
+    ) -> None:
         """Log a trade execution result."""
         log_entry = TradeLog(
             timestamp=datetime.now().isoformat(),
@@ -234,7 +237,7 @@ class TradeLogger:
         total_trades: int,
         win_rate: float,
         max_drawdown: float,
-    ):
+    ) -> None:
         """Log performance snapshot."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -263,7 +266,7 @@ class TradeLogger:
         conn.commit()
         conn.close()
 
-    def _write_json_log(self, agent: str, log_type: str, data: dict):
+    def _write_json_log(self, agent: str, log_type: str, data: dict[str, Any]) -> None:
         """Write to daily JSON log file."""
         date_str = datetime.now().strftime("%Y-%m-%d")
         log_file = self.log_dir / f"{agent}_{log_type}_{date_str}.jsonl"
@@ -271,7 +274,7 @@ class TradeLogger:
         with open(log_file, "a") as f:
             f.write(json.dumps(data) + "\n")
 
-    def get_agent_trades(self, agent: str, limit: int = 50) -> list[dict]:
+    def get_agent_trades(self, agent: str, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent trades for an agent."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -292,7 +295,7 @@ class TradeLogger:
 
         return [dict(row) for row in rows]
 
-    def get_agent_decisions(self, agent: str, limit: int = 50) -> list[dict]:
+    def get_agent_decisions(self, agent: str, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent decisions for an agent."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -334,7 +337,9 @@ class TradeLogger:
 
         return {row[0]: row[1] for row in rows}
 
-    def get_performance_history(self, agent: str, days: int = 30) -> list[dict]:
+    def get_performance_history(
+        self, agent: str, days: int = 30
+    ) -> list[dict[str, Any]]:
         """Get performance history for an agent."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -355,7 +360,7 @@ class TradeLogger:
 
         return [dict(row) for row in reversed(rows)]
 
-    def get_competition_summary(self) -> dict:
+    def get_competition_summary(self) -> dict[str, Any]:
         """Get overall competition summary."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -370,7 +375,9 @@ class TradeLogger:
             GROUP BY agent
         """
         )
-        trade_stats = {row[0]: {"total": row[1], "successful": row[2]} for row in cursor.fetchall()}
+        trade_stats = {
+            row[0]: {"total": row[1], "successful": row[2]} for row in cursor.fetchall()
+        }
 
         # Get strategy breakdown
         cursor.execute(
@@ -392,7 +399,10 @@ class TradeLogger:
             """
             SELECT agent, equity, max_drawdown, win_rate
             FROM performance
-            WHERE timestamp = (SELECT MAX(timestamp) FROM performance WHERE agent = performance.agent)
+            WHERE timestamp = (
+                SELECT MAX(timestamp) FROM performance
+                WHERE agent = performance.agent
+            )
         """
         )
         perf_stats = {

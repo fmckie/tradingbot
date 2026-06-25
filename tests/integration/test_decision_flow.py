@@ -6,20 +6,21 @@ Tests the integration between:
 - Risk validation
 - Order execution
 """
-import pytest
+
 from datetime import datetime
-from decimal import Decimal
-from unittest.mock import MagicMock, AsyncMock, patch
+from typing import cast
+from unittest.mock import patch
+
+import pytest
 
 from agents.base_agent import (
-    TradingDecision,
-    MarketContext,
     ActionType,
     StrategyType,
+    TradingDecision,
 )
-from risk.risk_manager import RiskManager, RiskValidationResult
-from execution.order_executor import OrderExecutor, ExecutionResult
 from config.settings import RISK_LIMITS, SYMBOLS
+from execution.order_executor import OrderExecutor
+from risk.risk_manager import RiskManager, RiskValidationResult
 
 
 class TestMarketContextToDecisionFlow:
@@ -68,7 +69,9 @@ class TestDecisionToRiskValidationFlow:
         result = risk_manager.validate_decision(decision, current_price)
 
         assert result.valid is True
-        assert "passed" in result.message.lower() or result.adjusted_quantity is not None
+        assert (
+            "passed" in result.message.lower() or result.adjusted_quantity is not None
+        )
 
     def test_valid_sell_decision_passes_risk_validation(
         self, risk_manager, sample_sell_decision, mock_trading_client
@@ -170,8 +173,8 @@ class TestRiskValidationToExecutionFlow:
         # Mock trading hours check to allow trading
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_buy_decision, current_price=150.00
@@ -199,8 +202,8 @@ class TestRiskValidationToExecutionFlow:
 
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 bad_decision, current_price=150.00
@@ -217,8 +220,8 @@ class TestRiskValidationToExecutionFlow:
         """HOLD decision should succeed without placing an order."""
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_hold_decision, current_price=150.00
@@ -230,7 +233,11 @@ class TestRiskValidationToExecutionFlow:
 
     @pytest.mark.asyncio
     async def test_close_position_when_position_exists(
-        self, order_executor, sample_close_decision, mock_trading_client, mock_position_factory
+        self,
+        order_executor,
+        sample_close_decision,
+        mock_trading_client,
+        mock_position_factory,
     ):
         """CLOSE decision should close existing position."""
         # Set up existing position
@@ -239,8 +246,8 @@ class TestRiskValidationToExecutionFlow:
 
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_close_decision, current_price=155.00
@@ -259,8 +266,8 @@ class TestRiskValidationToExecutionFlow:
 
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_close_decision, current_price=155.00
@@ -294,8 +301,8 @@ class TestRiskValidationToExecutionFlow:
 
         with patch.object(
             risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await executor.execute_decision(decision, current_price=150.00)
 
@@ -304,7 +311,7 @@ class TestRiskValidationToExecutionFlow:
             order_request = mock_trading_client.submit_order.call_args[0][0]
             # The executed quantity should be less than original
             executed_qty = result.filled_quantity or order_request.qty
-            assert executed_qty <= decision.quantity
+            assert cast(int, executed_qty) <= cast(int, decision.quantity)
 
 
 class TestFullEndToEndFlow:
@@ -359,8 +366,8 @@ class TestFullEndToEndFlow:
         # 3. Execute
         with patch.object(
             risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await executor.execute_decision(decision, current_price)
 
@@ -398,8 +405,8 @@ class TestFullEndToEndFlow:
 
         with patch.object(
             risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await executor.execute_decision(decision, current_price=150.00)
 
@@ -423,8 +430,8 @@ class TestExecutionResultTracking:
         """ExecutionResult should contain the original decision."""
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_buy_decision, current_price=150.00
@@ -441,16 +448,16 @@ class TestExecutionResultTracking:
         """ExecutionResult should contain risk validation details."""
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_buy_decision, current_price=150.00
             )
 
         assert result.risk_validation is not None
-        assert hasattr(result.risk_validation, 'valid')
-        assert hasattr(result.risk_validation, 'message')
+        assert hasattr(result.risk_validation, "valid")
+        assert hasattr(result.risk_validation, "message")
 
     @pytest.mark.asyncio
     async def test_execution_result_has_timestamp(
@@ -459,8 +466,8 @@ class TestExecutionResultTracking:
         """ExecutionResult should have a timestamp."""
         with patch.object(
             order_executor.risk_manager,
-            'check_trading_allowed',
-            return_value=RiskValidationResult(valid=True, message="Trading allowed")
+            "check_trading_allowed",
+            return_value=RiskValidationResult(valid=True, message="Trading allowed"),
         ):
             result = await order_executor.execute_decision(
                 sample_buy_decision, current_price=150.00

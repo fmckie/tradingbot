@@ -1,0 +1,79 @@
+# pyproject.toml — tool configuration only (additive).
+#
+# Dependencies intentionally remain in requirements.txt / requirements-dev.txt.
+# pytest configuration intentionally remains in pytest.ini (single source of truth).
+# This file exists to give the repo a canonical home for tool config per the
+# Python style pack.
+
+[project]
+name = "tradingbot"
+version = "0.1.0"
+description = "AI trading competition: Claude Sonnet vs Grok on GOOGL and TSLA."
+requires-python = ">=3.12"
+
+# -----------------------------------------------------------------------------
+# Ruff: linter + formatter (https://docs.astral.sh/ruff/configuration/)
+# The project standardizes on `ruff format`; black remains installed in
+# requirements-dev.txt and is not removed.
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py312"  # matches requires-python floor (>=3.12)
+
+[tool.ruff.lint]
+# Strict-but-sane preset:
+#   E  pycodestyle errors
+#   F  Pyflakes
+#   I  isort (import sorting)
+#   UP pyupgrade (modern syntax)
+#   B  flake8-bugbear (likely bugs)
+#   SIM flake8-simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Entrypoint scripts must call load_dotenv() BEFORE importing config.settings,
+# which reads os.getenv("DATABASE_URL") at module import time. Imports therefore
+# legitimately follow runtime code in these files, so E402 is expected here.
+"main.py" = ["E402"]
+"test_simulation.py" = ["E402"]
+"test_learning_system.py" = ["E402"]
+
+[tool.ruff.format]
+# Defaults mirror black (double quotes, space indent, magic trailing comma).
+
+# -----------------------------------------------------------------------------
+# mypy: type checker (https://mypy.readthedocs.io/en/stable/config_file.html)
+# The style pack recommends Pyright (strict) as the type checker; mypy is the
+# tool already present in requirements-dev.txt, so it is configured here to stay
+# additive and avoid introducing a new required dependency.
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"  # matches requires-python floor (>=3.12)
+strict = true
+warn_unused_configs = true
+
+# Third-party libraries that ship no type stubs and no py.typed marker.
+# Without this mypy emits import-untyped for every import of them.
+[[tool.mypy.overrides]]
+module = ["ta.*", "asyncpg", "schedule"]
+ignore_missing_imports = true
+
+# Tests use pytest fixtures and assertion-style helpers; requiring an explicit
+# return annotation on every test function adds noise without catching bugs.
+# Production code stays fully strict; only the no-annotation checks relax here.
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    # Standalone manual test/diagnostic scripts at the repo root (not collected
+    # by pytest, which uses testpaths=tests).
+    "test_setup",
+    "test_simulation",
+    "test_learning_system",
+    "test_grok_api",
+    "test_json_utils",
+    "test_news",
+]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+disallow_untyped_calls = false

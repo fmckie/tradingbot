@@ -1,12 +1,14 @@
 """PostgreSQL client with connection pooling for Neon serverless."""
-import asyncio
+
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncGenerator, Optional
-import asyncpg
-from asyncpg import Pool, Connection
+from typing import Any, Optional, cast
 
-from config.settings import POSTGRES_URL, POSTGRES_POOL_SIZE
+import asyncpg
+from asyncpg import Connection, Pool
+
+from config.settings import POSTGRES_POOL_SIZE, POSTGRES_URL
 
 
 class PostgresClient:
@@ -17,7 +19,7 @@ class PostgresClient:
     """
 
     _instance: Optional["PostgresClient"] = None
-    _pool: Optional[Pool] = None
+    _pool: Pool | None = None
 
     def __new__(cls) -> "PostgresClient":
         """Singleton pattern for connection pool reuse."""
@@ -31,7 +33,8 @@ class PostgresClient:
         if cls._pool is None or cls._pool._closed:
             if not POSTGRES_URL:
                 raise ValueError(
-                    "DATABASE_URL not set. Please configure your Neon PostgreSQL connection string."
+                    "DATABASE_URL not set. Please configure your Neon PostgreSQL "
+                    "connection string."
                 )
 
             cls._pool = await asyncpg.create_pool(
@@ -40,9 +43,7 @@ class PostgresClient:
                 max_size=POSTGRES_POOL_SIZE,
                 command_timeout=30,
                 # Neon-specific: handle cold starts
-                server_settings={
-                    "application_name": "tradingbot-learning"
-                }
+                server_settings={"application_name": "tradingbot-learning"},
             )
         return cls._pool
 
@@ -58,16 +59,16 @@ class PostgresClient:
     async def execute(cls, query: str, *args: Any) -> str:
         """Execute a query that doesn't return results."""
         async with cls.connection() as conn:
-            return await conn.execute(query, *args)
+            return cast(str, await conn.execute(query, *args))
 
     @classmethod
     async def fetch(cls, query: str, *args: Any) -> list[asyncpg.Record]:
         """Execute a query and fetch all results."""
         async with cls.connection() as conn:
-            return await conn.fetch(query, *args)
+            return cast(list[Any], await conn.fetch(query, *args))
 
     @classmethod
-    async def fetchrow(cls, query: str, *args: Any) -> Optional[asyncpg.Record]:
+    async def fetchrow(cls, query: str, *args: Any) -> asyncpg.Record | None:
         """Execute a query and fetch one result."""
         async with cls.connection() as conn:
             return await conn.fetchrow(query, *args)
@@ -103,7 +104,7 @@ class PostgresClient:
         """Check if the database connection is healthy."""
         try:
             result = await cls.fetchval("SELECT 1")
-            return result == 1
+            return cast(bool, result == 1)
         except Exception:
             return False
 

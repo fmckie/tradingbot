@@ -1,16 +1,16 @@
 """Live scoreboard for AI trading competition."""
+
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
-import math
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.live import Live
-from rich import box
+from typing import Any
 
-from config.settings import STARTING_CAPITAL, COMPETITION_DAYS
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+from config.settings import COMPETITION_DAYS, STARTING_CAPITAL
 
 
 @dataclass
@@ -39,12 +39,12 @@ class AgentScore:
     daily_trades: int = 0
 
     # Strategy tracking
-    strategies_used: dict = field(default_factory=dict)
+    strategies_used: dict[str, int] = field(default_factory=dict)
     current_strategy: str = "defensive"
     last_decision_reasoning: str = ""
 
     # Timestamps
-    last_update: Optional[datetime] = None
+    last_update: datetime | None = None
     competition_start: datetime = field(default_factory=datetime.now)
 
     @property
@@ -96,7 +96,7 @@ class AgentScore:
         sharpe = (excess_return / volatility_estimate) * math.sqrt(252)
         return round(sharpe, 2)
 
-    def update_equity(self, equity: float, cash: float, positions_value: float):
+    def update_equity(self, equity: float, cash: float, positions_value: float) -> None:
         """Update equity values and track peak/drawdown."""
         self.current_equity = equity
         self.cash = cash
@@ -111,7 +111,7 @@ class AgentScore:
         if drawdown > self.max_drawdown:
             self.max_drawdown = drawdown
 
-    def record_trade(self, profit: float, strategy: str):
+    def record_trade(self, profit: float, strategy: str) -> None:
         """Record a completed trade."""
         self.total_trades += 1
         self.daily_trades += 1
@@ -124,7 +124,7 @@ class AgentScore:
         self.realized_pnl += profit
         self.strategies_used[strategy] = self.strategies_used.get(strategy, 0) + 1
 
-    def reset_daily(self):
+    def reset_daily(self) -> None:
         """Reset daily counters."""
         self.daily_pnl = 0.0
         self.daily_trades = 0
@@ -133,15 +133,17 @@ class AgentScore:
 class Scoreboard:
     """Live scoreboard display for the competition."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.console = Console()
         self.scores: dict[str, AgentScore] = {}
         self.competition_day = 1
         self.competition_start = datetime.now()
 
-    def register_agent(self, name: str):
+    def register_agent(self, name: str) -> None:
         """Register an agent for tracking."""
-        self.scores[name] = AgentScore(name=name, competition_start=self.competition_start)
+        self.scores[name] = AgentScore(
+            name=name, competition_start=self.competition_start
+        )
 
     def update_agent(
         self,
@@ -152,7 +154,7 @@ class Scoreboard:
         unrealized_pnl: float = 0.0,
         strategy: str = "defensive",
         reasoning: str = "",
-    ):
+    ) -> None:
         """Update an agent's score."""
         if name not in self.scores:
             self.register_agent(name)
@@ -163,12 +165,12 @@ class Scoreboard:
         score.current_strategy = strategy
         score.last_decision_reasoning = reasoning
 
-    def record_trade(self, name: str, profit: float, strategy: str):
+    def record_trade(self, name: str, profit: float, strategy: str) -> None:
         """Record a completed trade for an agent."""
         if name in self.scores:
             self.scores[name].record_trade(profit, strategy)
 
-    def get_leader(self) -> Optional[str]:
+    def get_leader(self) -> str | None:
         """Get the current leader by equity."""
         if not self.scores:
             return None
@@ -180,7 +182,9 @@ class Scoreboard:
         if len(self.scores) < 2:
             return 0.0
 
-        equities = sorted([s.current_equity for s in self.scores.values()], reverse=True)
+        equities = sorted(
+            [s.current_equity for s in self.scores.values()], reverse=True
+        )
         return equities[0] - equities[1]
 
     def render(self) -> Panel:
@@ -191,7 +195,10 @@ class Scoreboard:
 
         # Main scoreboard table
         table = Table(
-            title=f"AI TRADING COMPETITION - DAY {self.competition_day}/{COMPETITION_DAYS}",
+            title=(
+                f"AI TRADING COMPETITION - DAY "
+                f"{self.competition_day}/{COMPETITION_DAYS}"
+            ),
             box=box.DOUBLE_EDGE,
             show_header=True,
             header_style="bold cyan",
@@ -275,9 +282,11 @@ class Scoreboard:
         decisions_text = ""
 
         for name, score in sorted(self.scores.items()):
-            reasoning = score.last_decision_reasoning[:200] + "..." \
-                if len(score.last_decision_reasoning) > 200 \
+            reasoning = (
+                score.last_decision_reasoning[:200] + "..."
+                if len(score.last_decision_reasoning) > 200
                 else score.last_decision_reasoning
+            )
 
             decisions_text += f"[bold]{name.upper()}[/bold]: {reasoning}\n\n"
 
@@ -293,9 +302,14 @@ class Scoreboard:
 
         for name, score in sorted(self.scores.items()):
             if score.strategies_used:
-                most_used = max(score.strategies_used, key=lambda k: score.strategies_used[k])
+                most_used = max(
+                    score.strategies_used, key=lambda k: score.strategies_used[k]
+                )
                 usage = score.strategies_used.get(most_used, 0)
-                analysis_text += f"[bold]{name.upper()}[/bold]: Primarily {most_used} ({usage} uses)\n"
+                analysis_text += (
+                    f"[bold]{name.upper()}[/bold]: Primarily "
+                    f"{most_used} ({usage} uses)\n"
+                )
             else:
                 analysis_text += f"[bold]{name.upper()}[/bold]: No trades yet\n"
 
@@ -305,14 +319,14 @@ class Scoreboard:
             border_style="magenta",
         )
 
-    def display(self):
+    def display(self) -> None:
         """Display the full scoreboard."""
         self.console.clear()
         self.console.print(self.render())
         self.console.print(self.render_decisions())
         self.console.print(self.render_strategy_analysis())
 
-    def get_summary(self) -> dict:
+    def get_summary(self) -> dict[str, Any]:
         """Get scoreboard summary as dictionary for logging."""
         return {
             "competition_day": self.competition_day,

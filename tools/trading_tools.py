@@ -1,17 +1,18 @@
 """Trading tools that AI agents can call to execute trades."""
-from typing import Any
-from dataclasses import dataclass
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import (
-    MarketOrderRequest,
-    LimitOrderRequest,
-    StopLimitOrderRequest,
-    GetOrdersRequest,
-)
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderType, QueryOrderStatus
-from alpaca.trading.models import Position, TradeAccount, Order
 
-from config.settings import SYMBOLS, RISK_LIMITS
+from dataclasses import dataclass
+from typing import Any
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.models import Position
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    LimitOrderRequest,
+    MarketOrderRequest,
+)
+
+from config.settings import RISK_LIMITS, SYMBOLS
 
 
 @dataclass
@@ -21,14 +22,18 @@ class OrderResult:
     success: bool
     order_id: str | None
     message: str
-    details: dict
+    details: dict[str, Any]
 
 
 # Tool schemas for Claude/Grok function calling
 TRADING_TOOLS_SCHEMA = [
     {
         "name": "get_positions",
-        "description": "Get all current open positions including quantity, average entry price, current price, and unrealized P&L. Use this to understand your current exposure.",
+        "description": (
+            "Get all current open positions including quantity, average entry "
+            "price, current price, and unrealized P&L. Use this to understand "
+            "your current exposure."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -37,7 +42,10 @@ TRADING_TOOLS_SCHEMA = [
     },
     {
         "name": "get_account",
-        "description": "Get account information including balance, buying power, equity, and daily P&L. Use this to understand available capital.",
+        "description": (
+            "Get account information including balance, buying power, equity, "
+            "and daily P&L. Use this to understand available capital."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -46,7 +54,10 @@ TRADING_TOOLS_SCHEMA = [
     },
     {
         "name": "get_orders",
-        "description": "Get recent orders (filled, pending, canceled). Use this to review your trading history.",
+        "description": (
+            "Get recent orders (filled, pending, canceled). Use this to "
+            "review your trading history."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -67,7 +78,10 @@ TRADING_TOOLS_SCHEMA = [
     },
     {
         "name": "place_order",
-        "description": "Place a buy or sell order. STOP LOSS IS REQUIRED. You must specify a stop_loss price for risk management.",
+        "description": (
+            "Place a buy or sell order. STOP LOSS IS REQUIRED. You must "
+            "specify a stop_loss price for risk management."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -109,7 +123,9 @@ TRADING_TOOLS_SCHEMA = [
     },
     {
         "name": "close_position",
-        "description": "Close an existing position completely. Use this to exit a trade.",
+        "description": (
+            "Close an existing position completely. Use this to exit a trade."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -161,7 +177,7 @@ class TradingTools:
         self.client = trading_client
         self.agent_name = agent_name
 
-    def execute(self, tool_name: str, parameters: dict) -> dict[str, Any]:
+    def execute(self, tool_name: str, parameters: dict[str, Any]) -> dict[str, Any]:
         """Execute a trading tool and return the result."""
         # Defense in depth: even if an execution tool somehow reaches dispatch,
         # refuse it here. Trades are placed only through the gated ACTION path.
@@ -191,7 +207,7 @@ class TradingTools:
         except Exception as e:
             return {"error": str(e)}
 
-    def _get_positions(self, params: dict) -> dict:
+    def _get_positions(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get current positions."""
         positions = self.client.get_all_positions()
 
@@ -213,13 +229,23 @@ class TradingTools:
                     {
                         "symbol": pos.symbol,
                         "quantity": int(pos.qty) if pos.qty else 0,
-                        "side": "long" if (int(pos.qty) if pos.qty else 0) > 0 else "short",
-                        "avg_entry_price": float(pos.avg_entry_price) if pos.avg_entry_price else 0.0,
-                        "current_price": float(pos.current_price) if pos.current_price else 0.0,
+                        "side": "long"
+                        if (int(pos.qty) if pos.qty else 0) > 0
+                        else "short",
+                        "avg_entry_price": float(pos.avg_entry_price)
+                        if pos.avg_entry_price
+                        else 0.0,
+                        "current_price": float(pos.current_price)
+                        if pos.current_price
+                        else 0.0,
                         "market_value": pos_value,
                         "unrealized_pnl": unrealized,
-                        "unrealized_pnl_percent": float(pos.unrealized_plpc) * 100 if pos.unrealized_plpc else 0.0,
-                        "change_today_percent": float(pos.change_today) * 100 if pos.change_today else 0.0,
+                        "unrealized_pnl_percent": float(pos.unrealized_plpc) * 100
+                        if pos.unrealized_plpc
+                        else 0.0,
+                        "change_today_percent": float(pos.change_today) * 100
+                        if pos.change_today
+                        else 0.0,
                     }
                 )
 
@@ -230,7 +256,7 @@ class TradingTools:
             "total_unrealized_pnl": total_unrealized_pnl,
         }
 
-    def _get_account(self, params: dict) -> dict:
+    def _get_account(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get account information."""
         account = self.client.get_account()
 
@@ -241,7 +267,9 @@ class TradingTools:
         equity = float(account.equity) if account.equity else 0.0
         cash = float(account.cash) if account.cash else 0.0
         buying_power = float(account.buying_power) if account.buying_power else 0.0
-        portfolio_value = float(account.portfolio_value) if account.portfolio_value else 0.0
+        portfolio_value = (
+            float(account.portfolio_value) if account.portfolio_value else 0.0
+        )
         last_equity = float(account.last_equity) if account.last_equity else 0.0
 
         return {
@@ -259,7 +287,7 @@ class TradingTools:
             "account_blocked": account.account_blocked,
         }
 
-    def _get_orders(self, params: dict) -> dict:
+    def _get_orders(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get recent orders."""
         status = params.get("status", "all")
         limit = min(params.get("limit", 20), 100)
@@ -287,21 +315,31 @@ class TradingTools:
                         "side": order.side.value if order.side else "unknown",
                         "type": order.type.value if order.type else "unknown",
                         "quantity": int(order.qty) if order.qty else 0,
-                        "filled_quantity": int(order.filled_qty) if order.filled_qty else 0,
-                        "limit_price": float(order.limit_price) if order.limit_price else None,
-                        "stop_price": float(order.stop_price) if order.stop_price else None,
+                        "filled_quantity": int(order.filled_qty)
+                        if order.filled_qty
+                        else 0,
+                        "limit_price": float(order.limit_price)
+                        if order.limit_price
+                        else None,
+                        "stop_price": float(order.stop_price)
+                        if order.stop_price
+                        else None,
                         "filled_avg_price": float(order.filled_avg_price)
                         if order.filled_avg_price
                         else None,
                         "status": order.status.value if order.status else "unknown",
-                        "created_at": order.created_at.isoformat() if order.created_at else None,
-                        "filled_at": order.filled_at.isoformat() if order.filled_at else None,
+                        "created_at": order.created_at.isoformat()
+                        if order.created_at
+                        else None,
+                        "filled_at": order.filled_at.isoformat()
+                        if order.filled_at
+                        else None,
                     }
                 )
 
         return {"orders": order_list, "total_orders": len(order_list)}
 
-    def _place_order(self, params: dict) -> dict:
+    def _place_order(self, params: dict[str, Any]) -> dict[str, Any]:
         """Place a new order with validation."""
         symbol = params.get("symbol")
         side = params.get("side")
@@ -345,14 +383,23 @@ class TradingTools:
         daily_pnl = equity - last_equity
         if daily_pnl < -equity * RISK_LIMITS.daily_loss_limit:
             return {
-                "error": f"Daily loss limit ({RISK_LIMITS.daily_loss_limit*100}%) reached. No more trading today.",
+                "error": (
+                    f"Daily loss limit ({RISK_LIMITS.daily_loss_limit * 100}%) "
+                    f"reached. No more trading today."
+                ),
                 "daily_pnl": daily_pnl,
             }
 
         # Check max positions
-        if symbol not in current_positions and len(current_positions) >= RISK_LIMITS.max_positions:
+        if (
+            symbol not in current_positions
+            and len(current_positions) >= RISK_LIMITS.max_positions
+        ):
             return {
-                "error": f"Max positions ({RISK_LIMITS.max_positions}) reached. Close a position first."
+                "error": (
+                    f"Max positions ({RISK_LIMITS.max_positions}) reached. "
+                    f"Close a position first."
+                )
             }
 
         # Place the main order
@@ -392,7 +439,9 @@ class TradingTools:
                 "quantity": quantity,
                 "order_type": order_type,
                 "status": order.status.value if order.status else "unknown",
-                "message": f"Order placed successfully for {quantity} shares of {symbol}",
+                "message": (
+                    f"Order placed successfully for {quantity} shares of {symbol}"
+                ),
             }
 
             if limit_price:
@@ -408,7 +457,7 @@ class TradingTools:
         except Exception as e:
             return {"error": f"Order placement failed: {str(e)}"}
 
-    def _close_position(self, params: dict) -> dict:
+    def _close_position(self, params: dict[str, Any]) -> dict[str, Any]:
         """Close an existing position."""
         symbol = params.get("symbol")
 
@@ -437,14 +486,16 @@ class TradingTools:
                 "success": True,
                 "symbol": symbol,
                 "closed_quantity": int(position.qty) if position.qty else 0,
-                "realized_pnl": float(position.unrealized_pl) if position.unrealized_pl else 0.0,
+                "realized_pnl": float(position.unrealized_pl)
+                if position.unrealized_pl
+                else 0.0,
                 "message": f"Position closed for {symbol}",
             }
 
         except Exception as e:
             return {"error": f"Failed to close position: {str(e)}"}
 
-    def _cancel_order(self, params: dict) -> dict:
+    def _cancel_order(self, params: dict[str, Any]) -> dict[str, Any]:
         """Cancel a pending order."""
         order_id = params.get("order_id")
 

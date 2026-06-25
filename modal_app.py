@@ -4,8 +4,11 @@ Modal deployment for AI Trading Competition.
 Runs the hourly trading cycle on a schedule during market hours.
 Deploy with: modal deploy modal_app.py
 """
-import modal
+
 from datetime import datetime
+from typing import Any
+
+import modal
 import pytz
 
 # Create Modal app
@@ -44,7 +47,7 @@ image = (
     schedule=modal.Cron("0 14-21 * * 1-5"),
     timeout=300,
 )
-def run_hourly_cycle():
+def run_hourly_cycle() -> dict[str, Any]:
     """Run the hourly trading decision cycle."""
     import asyncio
     import os
@@ -59,8 +62,8 @@ def run_hourly_cycle():
     # Use persistent volume for database
     os.environ["DATABASE_PATH"] = "/data/trading_competition.sqlite"
 
-    from main import TradingCompetition
     from config.settings import TRADING_HOURS
+    from main import TradingCompetition
 
     # Check if within trading window (with buffer)
     et = pytz.timezone("America/New_York")
@@ -94,19 +97,26 @@ def run_hourly_cycle():
         return {"status": "skipped", "reason": "weekend"}
 
     if now < trade_start:
-        print(f"[SKIP] Before trading window: {now.strftime('%H:%M ET')} (opens at {trade_start.strftime('%H:%M ET')})")
+        print(
+            f"[SKIP] Before trading window: {now.strftime('%H:%M ET')} "
+            f"(opens at {trade_start.strftime('%H:%M ET')})"
+        )
         return {"status": "skipped", "reason": "before_market"}
 
     if now > trade_end:
-        print(f"[SKIP] After trading window: {now.strftime('%H:%M ET')} (closed at {trade_end.strftime('%H:%M ET')})")
+        print(
+            f"[SKIP] After trading window: {now.strftime('%H:%M ET')} "
+            f"(closed at {trade_end.strftime('%H:%M ET')})"
+        )
         return {"status": "skipped", "reason": "after_market"}
 
     print(f"[RUN] Trading cycle at {now.strftime('%Y-%m-%d %H:%M ET')}")
 
-    async def _run_with_db_init():
+    async def _run_with_db_init() -> None:
         # Initialize PostgreSQL schema (idempotent)
         try:
             from database.postgres_client import init_database
+
             await init_database()
         except Exception as e:
             print(f"[WARN] Learning system unavailable: {e}")
@@ -125,7 +135,7 @@ def run_hourly_cycle():
 
 
 @app.local_entrypoint()
-def main(dry: bool = False):
+def main(dry: bool = False) -> None:
     """Local entrypoint for manual testing.
 
     Args:
@@ -147,7 +157,7 @@ def main(dry: bool = False):
     secrets=[modal.Secret.from_name("trading-secrets")],
     timeout=300,
 )
-def run_once():
+def run_once() -> dict[str, Any]:
     """Run a single cycle without schedule check - for testing."""
     import asyncio
     import os
@@ -163,10 +173,11 @@ def run_once():
     now = datetime.now(et)
     print(f"[TEST] Running test cycle at {now.strftime('%Y-%m-%d %H:%M ET')}")
 
-    async def _run_with_db_init():
+    async def _run_with_db_init() -> None:
         # Initialize PostgreSQL schema (idempotent)
         try:
             from database.postgres_client import init_database
+
             await init_database()
         except Exception as e:
             print(f"[WARN] Learning system unavailable: {e}")
@@ -188,7 +199,7 @@ def run_once():
     secrets=[modal.Secret.from_name("trading-secrets")],
     timeout=600,  # 10 min timeout for full cycle
 )
-def run_dry():
+def run_dry() -> dict[str, Any]:
     """Run a full trading cycle ignoring market hours - for testing."""
     import asyncio
     import os
@@ -205,10 +216,11 @@ def run_dry():
     print(f"[DRY RUN] Running full cycle at {now.strftime('%Y-%m-%d %H:%M ET')}")
     print("[DRY RUN] Market hours check DISABLED")
 
-    async def _run_with_db_init():
+    async def _run_with_db_init() -> None:
         # Initialize PostgreSQL schema (idempotent)
         try:
             from database.postgres_client import init_database
+
             await init_database()
         except Exception as e:
             print(f"[WARN] Learning system unavailable: {e}")

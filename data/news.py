@@ -1,11 +1,10 @@
 """News data provider using Alpaca News API with sentiment scoring."""
+
 import os
-import re
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional
-from functools import lru_cache
 import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
 
 from alpaca.data.historical.news import NewsClient
 from alpaca.data.requests import NewsRequest
@@ -18,23 +17,104 @@ load_dotenv()
 
 # Sentiment keyword dictionaries
 BULLISH_KEYWORDS = [
-    "surge", "soar", "beat", "beats", "upgrade", "upgrades", "record", "partnership",
-    "outperform", "rally", "jump", "gain", "gains", "growth", "profit", "profits",
-    "revenue", "exceeds", "exceeded", "strong", "bullish", "positive", "optimistic",
-    "breakthrough", "innovation", "expand", "expansion", "success", "successful",
-    "boost", "boosted", "rises", "rising", "buy", "overweight", "opportunity",
-    "momentum", "accelerate", "accelerating", "beat expectations", "upside",
-    "all-time high", "record high", "outperforms", "delivers", "delivered"
+    "surge",
+    "soar",
+    "beat",
+    "beats",
+    "upgrade",
+    "upgrades",
+    "record",
+    "partnership",
+    "outperform",
+    "rally",
+    "jump",
+    "gain",
+    "gains",
+    "growth",
+    "profit",
+    "profits",
+    "revenue",
+    "exceeds",
+    "exceeded",
+    "strong",
+    "bullish",
+    "positive",
+    "optimistic",
+    "breakthrough",
+    "innovation",
+    "expand",
+    "expansion",
+    "success",
+    "successful",
+    "boost",
+    "boosted",
+    "rises",
+    "rising",
+    "buy",
+    "overweight",
+    "opportunity",
+    "momentum",
+    "accelerate",
+    "accelerating",
+    "beat expectations",
+    "upside",
+    "all-time high",
+    "record high",
+    "outperforms",
+    "delivers",
+    "delivered",
 ]
 
 BEARISH_KEYWORDS = [
-    "fall", "falls", "drop", "drops", "miss", "misses", "downgrade", "downgrades",
-    "lawsuit", "recall", "decline", "declines", "loss", "losses", "plunge", "crash",
-    "slump", "weak", "bearish", "negative", "pessimistic", "warning", "warns",
-    "concern", "concerns", "risk", "risks", "cut", "cuts", "layoff", "layoffs",
-    "investigation", "probe", "sell", "underweight", "underperform", "disappoints",
-    "disappointing", "below expectations", "downside", "tumble", "tumbles",
-    "struggle", "struggles", "delay", "delays", "setback", "fail", "fails"
+    "fall",
+    "falls",
+    "drop",
+    "drops",
+    "miss",
+    "misses",
+    "downgrade",
+    "downgrades",
+    "lawsuit",
+    "recall",
+    "decline",
+    "declines",
+    "loss",
+    "losses",
+    "plunge",
+    "crash",
+    "slump",
+    "weak",
+    "bearish",
+    "negative",
+    "pessimistic",
+    "warning",
+    "warns",
+    "concern",
+    "concerns",
+    "risk",
+    "risks",
+    "cut",
+    "cuts",
+    "layoff",
+    "layoffs",
+    "investigation",
+    "probe",
+    "sell",
+    "underweight",
+    "underperform",
+    "disappoints",
+    "disappointing",
+    "below expectations",
+    "downside",
+    "tumble",
+    "tumbles",
+    "struggle",
+    "struggles",
+    "delay",
+    "delays",
+    "setback",
+    "fail",
+    "fails",
 ]
 
 
@@ -51,7 +131,7 @@ class NewsArticle:
     sentiment_score: float  # -1 to +1
     sentiment_label: str  # "bullish", "bearish", "neutral"
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "headline": self.headline,
@@ -78,7 +158,7 @@ class NewsSentiment:
     neutral_count: int
     latest_headline: str
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "symbol": self.symbol,
@@ -104,7 +184,7 @@ class NewsProvider:
     # Cache TTL in seconds (15 minutes)
     CACHE_TTL = 900
 
-    def __init__(self, api_key: Optional[str] = None, secret_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, secret_key: str | None = None):
         """
         Initialize the news provider with Alpaca NewsClient.
 
@@ -171,10 +251,7 @@ class NewsProvider:
         return score, label
 
     def get_news(
-        self,
-        symbols: Optional[list[str]] = None,
-        hours_back: int = 24,
-        limit: int = 10
+        self, symbols: list[str] | None = None, hours_back: int = 24, limit: int = 10
     ) -> list[NewsArticle]:
         """
         Fetch recent news articles for specified symbols.
@@ -219,7 +296,11 @@ class NewsProvider:
 
             # Process articles
             # NewsSet has data attribute with 'news' key containing list of News objects
-            news_list = news_response.data.get('news', []) if hasattr(news_response, 'data') else []
+            news_list: list[Any] = (
+                news_response.data.get("news", [])
+                if hasattr(news_response, "data")
+                else []
+            )
             articles = []
             for news in news_list:
                 # Combine headline and summary for sentiment analysis
@@ -249,7 +330,9 @@ class NewsProvider:
                 article_symbols = [s for s in article.symbols if s in valid_symbols]
                 if article_symbols:
                     # Check if we've hit limit for all symbols in this article
-                    all_at_limit = all(symbol_counts.get(s, 0) >= limit for s in article_symbols)
+                    all_at_limit = all(
+                        symbol_counts.get(s, 0) >= limit for s in article_symbols
+                    )
                     if not all_at_limit:
                         filtered_articles.append(article)
                         for s in article_symbols:
@@ -266,10 +349,7 @@ class NewsProvider:
             return []
 
     def get_news_for_symbol(
-        self,
-        symbol: str,
-        hours_back: int = 24,
-        limit: int = 10
+        self, symbol: str, hours_back: int = 24, limit: int = 10
     ) -> list[NewsArticle]:
         """
         Fetch news for a specific symbol.
@@ -348,13 +428,15 @@ class NewsProvider:
         Returns:
             Dictionary mapping symbol to NewsSentiment
         """
-        return {symbol: self.get_sentiment_summary(symbol, hours_back) for symbol in SYMBOLS}
+        return {
+            symbol: self.get_sentiment_summary(symbol, hours_back) for symbol in SYMBOLS
+        }
 
     def format_news_for_context(
         self,
-        symbols: Optional[list[str]] = None,
+        symbols: list[str] | None = None,
         hours_back: int = 24,
-        max_headlines: int = 3
+        max_headlines: int = 3,
     ) -> str:
         """
         Format news data as a string for AI agent context.
@@ -382,17 +464,25 @@ class NewsProvider:
                 sentiment_str += f" ({sentiment.avg_sentiment:+.2f})"
 
             output_lines.append(f"\nNEWS SENTIMENT for {symbol}:")
-            output_lines.append(f"  Overall: {sentiment_str} ({sentiment.article_count} articles)")
+            output_lines.append(
+                f"  Overall: {sentiment_str} ({sentiment.article_count} articles)"
+            )
 
             if news:
                 output_lines.append("  Recent Headlines:")
                 for article in news[:max_headlines]:
                     # Truncate long headlines
-                    headline = article.headline[:80] + "..." if len(article.headline) > 80 else article.headline
-                    output_lines.append(f"    - [{article.sentiment_label[0].upper()}] {headline}")
+                    headline = (
+                        article.headline[:80] + "..."
+                        if len(article.headline) > 80
+                        else article.headline
+                    )
+                    output_lines.append(
+                        f"    - [{article.sentiment_label[0].upper()}] {headline}"
+                    )
 
         return "\n".join(output_lines)
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """Clear the news cache."""
         self._cache.clear()

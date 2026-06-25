@@ -9,17 +9,20 @@ Tests cover:
 - most_used_strategy property
 - get_performance_summary()
 """
-import pytest
+
 from datetime import datetime
-from unittest.mock import Mock, MagicMock, AsyncMock, patch
+from typing import Any
+from unittest.mock import Mock, patch
+
+import pytest
 
 from agents.base_agent import (
-    BaseTradingAgent,
-    TradingDecision,
     ActionType,
-    StrategyType,
     AgentState,
+    BaseTradingAgent,
     MarketContext,
+    StrategyType,
+    TradingDecision,
 )
 
 
@@ -43,11 +46,11 @@ class ConcreteTestAgent(BaseTradingAgent):
     async def generate_reflection(
         self,
         episode_id: int,
-        decision_made: dict,
-        market_context: dict,
+        decision_made: dict[str, Any],
+        market_context: dict[str, Any],
         outcome_pnl: float,
         outcome_status: str,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Test implementation."""
         return {
             "what_worked": "test",
@@ -419,7 +422,7 @@ class TestExecuteTool:
         """Should route analysis tools to analysis handler."""
         test_agent.tools["analysis"].execute.return_value = {"trend": "bullish"}
 
-        result = test_agent.execute_tool("analyze_trend", {"symbol": "GOOGL"})
+        test_agent.execute_tool("analyze_trend", {"symbol": "GOOGL"})
 
         test_agent.tools["analysis"].execute.assert_called_once()
 

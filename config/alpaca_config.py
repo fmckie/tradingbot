@@ -1,10 +1,12 @@
 """Alpaca API configuration for both trading accounts."""
+
 import os
-from dotenv import load_dotenv
-from alpaca.trading.client import TradingClient
+
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.historical.news import NewsClient
 from alpaca.data.live import StockDataStream
+from alpaca.trading.client import TradingClient
+from dotenv import load_dotenv
 
 load_dotenv()
 

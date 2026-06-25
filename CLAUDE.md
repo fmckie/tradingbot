@@ -1,6 +1,6 @@
 # AI Trading Bot
 
-AI trading competition pitting Claude Opus 4.5 vs Grok on GOOGL and TSLA. Runs hourly trading decisions during market hours with integrated risk management, performance tracking, and a learning system.
+AI trading competition pitting Claude Sonnet 4.6 vs Grok 4.3 on GOOGL and TSLA. Runs hourly trading decisions during market hours with integrated risk management, performance tracking, and a learning system.
 
 ## Project Structure
 
@@ -8,7 +8,7 @@ AI trading competition pitting Claude Opus 4.5 vs Grok on GOOGL and TSLA. Runs h
 tradingbot/
 ├── agents/              # AI agent implementations
 │   ├── base_agent.py   # Base class, MarketContext, TradingDecision dataclasses
-│   ├── claude_agent.py # Claude Opus 4.5 trading agent
+│   ├── claude_agent.py # Claude Sonnet 4.6 trading agent
 │   └── grok_agent.py   # Grok API trading agent
 ├── config/              # Configuration
 │   ├── settings.py     # Risk limits, trading hours, symbols
@@ -26,7 +26,9 @@ tradingbot/
 │   └── risk_manager.py # Hard position limits enforcement
 ├── monitoring/          # Logging and tracking
 │   ├── logger.py       # Trade event logging
-│   └── scoreboard.py   # Performance metrics
+│   ├── scoreboard.py   # Performance metrics (console)
+│   ├── dashboard.py    # Read-only web monitoring dashboard (stdlib http.server)
+│   └── dashboard.html  # nof1-style live dashboard page
 ├── reports/             # Competition reports
 ├── tools/               # AI-exposed tools
 │   ├── market_tools.py
@@ -79,6 +81,18 @@ Modal cloud deployment:
 ```bash
 modal run modal_app.py
 ```
+
+## Monitoring
+
+Console scoreboard prints automatically during a run. For a live web view, run
+the read-only dashboard (stdlib only, opens SQLite with `mode=ro` so it never
+blocks `main.py`):
+```bash
+python -m monitoring.dashboard            # http://127.0.0.1:8787
+python -m monitoring.dashboard --once     # print JSON snapshot and exit
+```
+Serves `GET /` (page) and `GET /api/state` (JSON from `TradeLogger` data +
+`RISK_LIMITS`); `?theme=dark|light`.
 
 ## Environment Setup
 

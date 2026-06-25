@@ -8,20 +8,18 @@ Tests the complete learning cycle:
 - Learning deduplication
 - Success/failure count updates
 """
-import pytest
-from datetime import datetime, timedelta
+
+from datetime import datetime
 from decimal import Decimal
-from unittest.mock import MagicMock, AsyncMock, patch
-import asyncio
+
+import pytest
 
 from database.learning_store import (
     Episode,
-    Reflection,
     Learning,
     OutcomeStatus,
-    LearningStore,
+    Reflection,
 )
-from agents.base_agent import MarketContext
 
 
 class TestEpisodeCreationFlow:
@@ -348,14 +346,12 @@ class TestLearningRecallBasedOnMarketRegime:
 
         # Query for bullish regime
         bullish_learnings = await in_memory_store.get_learnings_by_tags(
-            agent_name="claude",
-            tags=["bullish"],
-            limit=10
+            agent_name="claude", tags=["bullish"], limit=10
         )
 
         # Should find the RSI oversold bounce learning
         assert len(bullish_learnings) >= 1
-        patterns = [l.pattern for l in bullish_learnings]
+        patterns = [learning.pattern for learning in bullish_learnings]
         assert any("RSI" in p for p in patterns)
 
     @pytest.mark.asyncio
@@ -368,9 +364,7 @@ class TestLearningRecallBasedOnMarketRegime:
 
         # Query for GOOGL
         googl_learnings = await in_memory_store.get_learnings_by_tags(
-            agent_name="claude",
-            tags=["GOOGL"],
-            limit=10
+            agent_name="claude", tags=["GOOGL"], limit=10
         )
 
         assert len(googl_learnings) >= 1
@@ -387,14 +381,17 @@ class TestLearningRecallBasedOnMarketRegime:
             await in_memory_store.create_learning(learning)
 
         top_learnings = await in_memory_store.get_top_learnings(
-            agent_name="claude",
-            limit=10
+            agent_name="claude", limit=10
         )
 
         # Should be sorted by (success - failure) descending
         for i in range(len(top_learnings) - 1):
-            current_score = top_learnings[i].success_count - top_learnings[i].failure_count
-            next_score = top_learnings[i+1].success_count - top_learnings[i+1].failure_count
+            current_score = (
+                top_learnings[i].success_count - top_learnings[i].failure_count
+            )
+            next_score = (
+                top_learnings[i + 1].success_count - top_learnings[i + 1].failure_count
+            )
             assert current_score >= next_score
 
     @pytest.mark.asyncio
@@ -411,7 +408,7 @@ class TestLearningRecallBasedOnMarketRegime:
             is_active=True,
             tags=["test"],
         )
-        active_id = await in_memory_store.create_learning(active)
+        await in_memory_store.create_learning(active)
 
         # Create inactive learning
         inactive = Learning(
@@ -428,9 +425,7 @@ class TestLearningRecallBasedOnMarketRegime:
 
         # Query
         results = await in_memory_store.get_learnings_by_tags(
-            agent_name="claude",
-            tags=["test"],
-            limit=10
+            agent_name="claude", tags=["test"], limit=10
         )
 
         # Should only return active
@@ -461,7 +456,7 @@ class TestLearningDeduplication:
         similar = await in_memory_store.find_similar_learning(
             agent_name="claude",
             pattern="RSI oversold",  # Partial match
-            tags=["rsi", "oversold"]
+            tags=["rsi", "oversold"],
         )
 
         assert similar is not None
@@ -485,9 +480,7 @@ class TestLearningDeduplication:
 
         # Find and update instead of creating new
         similar = await in_memory_store.find_similar_learning(
-            agent_name="claude",
-            pattern="Morning momentum",
-            tags=["momentum"]
+            agent_name="claude", pattern="Morning momentum", tags=["momentum"]
         )
 
         if similar:
@@ -532,9 +525,7 @@ class TestLearningDeduplication:
 
         # Search for Grok should not find Claude's
         grok_similar = await in_memory_store.find_similar_learning(
-            agent_name="grok",
-            pattern="RSI",
-            tags=["rsi"]
+            agent_name="grok", pattern="RSI", tags=["rsi"]
         )
 
         assert grok_similar is not None
@@ -681,15 +672,16 @@ class TestCompleteLearningCycle:
 
     @pytest.mark.asyncio
     async def test_full_learning_cycle(self, in_memory_store):
-        """Test complete cycle: Episode -> Outcome -> Reflection -> Learning -> Recall."""
+        """Test complete cycle.
+
+        Episode -> Outcome -> Reflection -> Learning -> Recall.
+        """
         # 1. Create episode (decision made)
         episode = Episode(
             agent_name="claude",
             timestamp=datetime.now(),
             market_regime="bullish - strong",
-            symbols_context={
-                "GOOGL": {"price": 150.00, "rsi": 65.0, "trend": "up"}
-            },
+            symbols_context={"GOOGL": {"price": 150.00, "rsi": 65.0, "trend": "up"}},
             account_state={"equity": 100000.00},
             decision_made={
                 "action": "BUY",
@@ -711,9 +703,13 @@ class TestCompleteLearningCycle:
         reflection = Reflection(
             episode_id=episode_id,
             agent_name="claude",
-            what_worked="RSI above 60 in bullish market correctly predicted continuation",
+            what_worked=(
+                "RSI above 60 in bullish market correctly predicted continuation"
+            ),
             what_failed="Could have held longer for more profit",
-            lesson_learned="RSI 60-70 in uptrend is a continuation signal, not overbought",
+            lesson_learned=(
+                "RSI 60-70 in uptrend is a continuation signal, not overbought"
+            ),
             next_time_will="Hold position longer when trend is strong",
             confidence_adjustment=Decimal("0.05"),
             tags=["GOOGL", "momentum", "rsi", "bullish", "continuation"],
@@ -731,19 +727,17 @@ class TestCompleteLearningCycle:
             is_active=True,
             tags=["rsi", "bullish", "continuation", "GOOGL"],
         )
-        learning_id = await in_memory_store.create_learning(learning)
+        await in_memory_store.create_learning(learning)
 
         # 5. Recall learning for similar context
         recalled = await in_memory_store.get_learnings_by_tags(
-            agent_name="claude",
-            tags=["bullish", "rsi"],
-            limit=5
+            agent_name="claude", tags=["bullish", "rsi"], limit=5
         )
 
         # Verify cycle completed
         assert len(recalled) >= 1
         found_learning = next(
-            (l for l in recalled if "RSI 60-70" in l.pattern), None
+            (learning for learning in recalled if "RSI 60-70" in learning.pattern), None
         )
         assert found_learning is not None
         assert found_learning.success_count == 1
@@ -765,7 +759,7 @@ class TestCompleteLearningCycle:
         learning_id = await in_memory_store.create_learning(learning)
 
         # Simulate 5 successful trades using this pattern
-        for i in range(5):
+        for _i in range(5):
             episode = Episode(
                 agent_name="claude",
                 timestamp=datetime.now(),

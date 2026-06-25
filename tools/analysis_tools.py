@@ -1,14 +1,18 @@
 """Analysis tools for deeper market analysis."""
-from typing import Any
-from data.market_data import MarketDataProvider
-from data.indicators import TechnicalIndicators
-from config.settings import SYMBOLS
 
+from typing import Any
+
+from config.settings import SYMBOLS
+from data.indicators import TechnicalIndicators
+from data.market_data import MarketDataProvider
 
 ANALYSIS_TOOLS_SCHEMA = [
     {
         "name": "get_market_context",
-        "description": "Get broader market context including both GOOGL and TSLA snapshots, their relative performance, and market conditions.",
+        "description": (
+            "Get broader market context including both GOOGL and TSLA "
+            "snapshots, their relative performance, and market conditions."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -17,7 +21,9 @@ ANALYSIS_TOOLS_SCHEMA = [
     },
     {
         "name": "compare_stocks",
-        "description": "Compare GOOGL and TSLA on various metrics to decide which one to trade.",
+        "description": (
+            "Compare GOOGL and TSLA on various metrics to decide which one to trade."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -26,7 +32,9 @@ ANALYSIS_TOOLS_SCHEMA = [
     },
     {
         "name": "get_support_resistance",
-        "description": "Calculate support and resistance levels based on recent price action.",
+        "description": (
+            "Calculate support and resistance levels based on recent price action."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -60,11 +68,13 @@ ANALYSIS_TOOLS_SCHEMA = [
 class AnalysisTools:
     """Advanced analysis tools for AI agents."""
 
-    def __init__(self, data_provider: MarketDataProvider, indicators: TechnicalIndicators):
+    def __init__(
+        self, data_provider: MarketDataProvider, indicators: TechnicalIndicators
+    ):
         self.data_provider = data_provider
         self.indicators = indicators
 
-    def execute(self, tool_name: str, parameters: dict) -> dict[str, Any]:
+    def execute(self, tool_name: str, parameters: dict[str, Any]) -> dict[str, Any]:
         """Execute an analysis tool and return the result."""
         handlers = {
             "get_market_context": self._get_market_context,
@@ -82,7 +92,7 @@ class AnalysisTools:
         except Exception as e:
             return {"error": str(e)}
 
-    def _get_market_context(self, params: dict) -> dict:
+    def _get_market_context(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get overall market context."""
         context = {}
 
@@ -122,7 +132,7 @@ class AnalysisTools:
             "market_condition": self._assess_market_condition(context),
         }
 
-    def _assess_market_condition(self, context: dict) -> str:
+    def _assess_market_condition(self, context: dict[str, Any]) -> str:
         """Assess overall market condition."""
         # Both bullish
         if (
@@ -141,7 +151,7 @@ class AnalysisTools:
         # Mixed
         return "mixed - stocks showing different trends"
 
-    def _compare_stocks(self, params: dict) -> dict:
+    def _compare_stocks(self, params: dict[str, Any]) -> dict[str, Any]:
         """Compare GOOGL and TSLA for trading decision."""
         comparison = {}
 
@@ -150,7 +160,11 @@ class AnalysisTools:
             snap = self.data_provider.get_snapshot(symbol)
 
             # Calculate volatility score
-            atr_percent = (ind.atr / snap.latest_trade_price) * 100 if snap.latest_trade_price > 0 else 0
+            atr_percent = (
+                (ind.atr / snap.latest_trade_price) * 100
+                if snap.latest_trade_price > 0
+                else 0
+            )
 
             # Calculate momentum score (-100 to +100)
             momentum_score: float = 0
@@ -164,7 +178,11 @@ class AnalysisTools:
             comparison[symbol] = {
                 "current_price": snap.latest_trade_price,
                 "rsi": round(ind.rsi, 1),
-                "rsi_signal": "oversold" if ind.rsi < 30 else "overbought" if ind.rsi > 70 else "neutral",
+                "rsi_signal": "oversold"
+                if ind.rsi < 30
+                else "overbought"
+                if ind.rsi > 70
+                else "neutral",
                 "macd_signal": "bullish" if ind.macd.histogram > 0 else "bearish",
                 "trend": "up" if ind.ema_9 > ind.ema_21 else "down",
                 "volatility_atr_percent": round(atr_percent, 2),
@@ -188,12 +206,18 @@ class AnalysisTools:
 
         # Mean reversion opportunity
         if googl["mean_reversion_opportunity"]:
-            recommendations.append(f"GOOGL at Bollinger extreme ({googl['bollinger_position']})")
+            recommendations.append(
+                f"GOOGL at Bollinger extreme ({googl['bollinger_position']})"
+            )
         if tsla["mean_reversion_opportunity"]:
-            recommendations.append(f"TSLA at Bollinger extreme ({tsla['bollinger_position']})")
+            recommendations.append(
+                f"TSLA at Bollinger extreme ({tsla['bollinger_position']})"
+            )
 
         # Lower volatility (safer)
-        if float(googl["volatility_atr_percent"]) < float(tsla["volatility_atr_percent"]):
+        if float(googl["volatility_atr_percent"]) < float(
+            tsla["volatility_atr_percent"]
+        ):
             recommendations.append("GOOGL has lower volatility (safer)")
         else:
             recommendations.append("TSLA has lower volatility (safer)")
@@ -203,7 +227,7 @@ class AnalysisTools:
             "recommendations": recommendations,
         }
 
-    def _get_support_resistance(self, params: dict) -> dict:
+    def _get_support_resistance(self, params: dict[str, Any]) -> dict[str, Any]:
         """Calculate support and resistance levels."""
         symbol = params.get("symbol")
 
@@ -254,7 +278,7 @@ class AnalysisTools:
             "price_range_20h": round(recent_high - recent_low, 2),
         }
 
-    def _analyze_trend(self, params: dict) -> dict:
+    def _analyze_trend(self, params: dict[str, Any]) -> dict[str, Any]:
         """Analyze trend direction and strength."""
         symbol = params.get("symbol")
 
@@ -274,14 +298,20 @@ class AnalysisTools:
         recent_lows = df["low"].tail(10)
 
         higher_highs = sum(
-            1 for i in range(1, len(recent_highs)) if recent_highs.iloc[i] > recent_highs.iloc[i - 1]
+            1
+            for i in range(1, len(recent_highs))
+            if recent_highs.iloc[i] > recent_highs.iloc[i - 1]
         )
         higher_lows = sum(
-            1 for i in range(1, len(recent_lows)) if recent_lows.iloc[i] > recent_lows.iloc[i - 1]
+            1
+            for i in range(1, len(recent_lows))
+            if recent_lows.iloc[i] > recent_lows.iloc[i - 1]
         )
 
         uptrend_score = higher_highs + higher_lows
-        trend_strength = "strong" if uptrend_score >= 14 or uptrend_score <= 4 else "weak"
+        trend_strength = (
+            "strong" if uptrend_score >= 14 or uptrend_score <= 4 else "weak"
+        )
 
         # Overall assessment
         if short_term == medium_term == long_term:
@@ -311,7 +341,9 @@ class AnalysisTools:
                 "sma_50": round(ind.sma_50, 2),
                 "sma_200": round(ind.sma_200, 2),
             },
-            "recommendation": self._trend_recommendation(short_term, medium_term, trend_strength),
+            "recommendation": self._trend_recommendation(
+                short_term, medium_term, trend_strength
+            ),
         }
 
     def _trend_recommendation(self, short: str, medium: str, strength: str) -> str:

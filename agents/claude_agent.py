@@ -1,28 +1,31 @@
 """Claude AI trading agent using Anthropic API."""
+
+import json
 import os
 import re
-import json
 from datetime import datetime
 from typing import Any, cast
+
 import anthropic
 
+from config.settings import LEARNING_ENABLED
 from database.json_utils import safe_json_dumps
+from tools.analysis_tools import ANALYSIS_TOOLS_SCHEMA
+from tools.market_tools import MARKET_TOOLS_SCHEMA
+from tools.news_tools import NEWS_TOOLS_SCHEMA
+from tools.trading_tools import READ_ONLY_TRADING_TOOLS_SCHEMA
 
 from .base_agent import (
-    BaseTradingAgent,
-    TradingDecision,
-    MarketContext,
     ActionType,
+    BaseTradingAgent,
+    MarketContext,
     StrategyType,
+    TradingDecision,
 )
-from tools.market_tools import MARKET_TOOLS_SCHEMA
-from tools.trading_tools import READ_ONLY_TRADING_TOOLS_SCHEMA
-from tools.analysis_tools import ANALYSIS_TOOLS_SCHEMA
-from tools.news_tools import NEWS_TOOLS_SCHEMA
-from config.settings import LEARNING_ENABLED
 
-
-CLAUDE_SYSTEM_PROMPT = """You are an autonomous AI trading agent managing a $100,000 paper trading portfolio.
+CLAUDE_SYSTEM_PROMPT = (
+    "You are an autonomous AI trading agent managing a $100,000 paper "
+    """trading portfolio.
 You can ONLY trade GOOGL and TSLA stocks on the NASDAQ.
 
 YOUR GOAL: Maximize risk-adjusted returns over a 1-month competition period.
@@ -36,7 +39,8 @@ WHAT YOU RECEIVE EACH HOUR:
 - Recent trade history
 
 NEWS ANALYSIS:
-You have access to news tools that provide sentiment-scored headlines. News sentiment can be:
+You have access to news tools that provide sentiment-scored headlines. """
+    """News sentiment can be:
 - Bullish: Positive news (upgrades, beat earnings, partnerships, etc.)
 - Bearish: Negative news (downgrades, misses, lawsuits, recalls, etc.)
 - Neutral: No clear sentiment signal
@@ -99,16 +103,19 @@ which sizes it, attaches the protective stop on the broker, and logs it. If you
 omit the block (or write prose like "order placed"), NO trade happens — it is
 treated as HOLD. Do not wrap the labels in markdown; write them plainly.
 
-You are competing against another AI (Grok). Make decisions that maximize risk-adjusted returns.
+You are competing against another AI (Grok). Make decisions that """
+    """maximize risk-adjusted returns.
 Quality of decisions matters more than quantity of trades.
 
-Always explain your reasoning clearly. Your decisions and explanations will be logged for analysis."""
+Always explain your reasoning clearly. Your decisions and explanations """
+    "will be logged for analysis."
+)
 
 
 class ClaudeAgent(BaseTradingAgent):
     """Trading agent powered by Claude (Anthropic)."""
 
-    def __init__(self, tools: dict):
+    def __init__(self, tools: dict[str, Any]):
         super().__init__("claude", tools)
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.model = "claude-sonnet-4-6"  # Claude Sonnet 4.6
@@ -117,7 +124,12 @@ class ClaudeAgent(BaseTradingAgent):
         # Combine all tool schemas. Only the READ-ONLY trading tools are exposed:
         # order execution is a privileged, gated operation, not an agent tool.
         # Trades are requested via the structured ACTION block (see system prompt).
-        self.tool_schemas = MARKET_TOOLS_SCHEMA + READ_ONLY_TRADING_TOOLS_SCHEMA + ANALYSIS_TOOLS_SCHEMA + NEWS_TOOLS_SCHEMA
+        self.tool_schemas = (
+            MARKET_TOOLS_SCHEMA
+            + READ_ONLY_TRADING_TOOLS_SCHEMA
+            + ANALYSIS_TOOLS_SCHEMA
+            + NEWS_TOOLS_SCHEMA
+        )
 
     async def analyze_and_decide(self, context: MarketContext) -> TradingDecision:
         """
@@ -178,7 +190,9 @@ class ClaudeAgent(BaseTradingAgent):
                         )
 
                 # Add assistant response and tool results to messages
-                messages.append({"role": "assistant", "content": cast(Any, response.content)})
+                messages.append(
+                    {"role": "assistant", "content": cast(Any, response.content)}
+                )
                 messages.append({"role": "user", "content": tool_results})
 
             else:
@@ -199,39 +213,50 @@ class ClaudeAgent(BaseTradingAgent):
             position_lines = []
             for p in context.positions:
                 lines = [
-                    f"  {p['symbol']}: {p['quantity']} shares @ ${p['avg_entry_price']:.2f}"
+                    f"  {p['symbol']}: {p['quantity']} shares "
+                    f"@ ${p['avg_entry_price']:.2f}"
                 ]
 
                 # P&L line (total + today)
-                pnl_line = f"    P&L: ${p['unrealized_pnl']:+.2f} ({p['unrealized_pnl_percent']:+.1f}%)"
-                if p.get('intraday_pnl') is not None:
-                    pnl_line += f" | Today: ${p['intraday_pnl']:+.2f} ({p.get('intraday_pnl_percent', 0):+.1f}%)"
+                pnl_line = (
+                    f"    P&L: ${p['unrealized_pnl']:+.2f} "
+                    f"({p['unrealized_pnl_percent']:+.1f}%)"
+                )
+                if p.get("intraday_pnl") is not None:
+                    pnl_line += (
+                        f" | Today: ${p['intraday_pnl']:+.2f} "
+                        f"({p.get('intraday_pnl_percent', 0):+.1f}%)"
+                    )
                 lines.append(pnl_line)
 
                 # Time context
-                if p.get('holding_duration'):
+                if p.get("holding_duration"):
                     time_str = f"    Holding: {p['holding_duration']}"
-                    if p.get('entry_time_str') and p['entry_time_str'] != 'Unknown':
+                    if p.get("entry_time_str") and p["entry_time_str"] != "Unknown":
                         time_str += f" since {p['entry_time_str']}"
                     lines.append(time_str)
 
                 # Stop/TP with distance
                 risk_parts = []
-                if p.get('stop_loss'):
-                    stop_dist = p.get('stop_distance_pct', 0)
-                    risk_parts.append(f"Stop: ${p['stop_loss']:.2f} ({stop_dist:+.1f}% away)")
-                if p.get('take_profit'):
-                    tp_dist = p.get('tp_distance_pct', 0)
-                    risk_parts.append(f"TP: ${p['take_profit']:.2f} ({tp_dist:+.1f}% away)")
+                if p.get("stop_loss"):
+                    stop_dist = p.get("stop_distance_pct", 0)
+                    risk_parts.append(
+                        f"Stop: ${p['stop_loss']:.2f} ({stop_dist:+.1f}% away)"
+                    )
+                if p.get("take_profit"):
+                    tp_dist = p.get("tp_distance_pct", 0)
+                    risk_parts.append(
+                        f"TP: ${p['take_profit']:.2f} ({tp_dist:+.1f}% away)"
+                    )
                 if risk_parts:
                     lines.append(f"    {' | '.join(risk_parts)}")
 
                 # Risk exposure
-                if p.get('exposure_percent'):
+                if p.get("exposure_percent"):
                     lines.append(f"    Risk: {p['exposure_percent']:.1f}% of equity")
 
                 # Symbol history
-                if p.get('symbol_total_trades', 0) > 0:
+                if p.get("symbol_total_trades", 0) > 0:
                     lines.append(
                         f"    Symbol history: {p['symbol_total_trades']} trades, "
                         f"{p.get('symbol_win_rate', 0):.0f}% win rate"
@@ -242,9 +267,14 @@ class ClaudeAgent(BaseTradingAgent):
             positions_str = "\n".join(position_lines)
 
         # Format recent trades
-        trades_str = "None" if not context.recent_trades else "\n".join(
-            f"  - {t['symbol']} {t['side']} {t['quantity']} @ ${t.get('filled_avg_price', 'pending')}"
-            for t in context.recent_trades[:5]
+        trades_str = (
+            "None"
+            if not context.recent_trades
+            else "\n".join(
+                f"  - {t['symbol']} {t['side']} {t['quantity']} "
+                f"@ ${t.get('filled_avg_price', 'pending')}"
+                for t in context.recent_trades[:5]
+            )
         )
 
         # Format symbol data
@@ -252,23 +282,25 @@ class ClaudeAgent(BaseTradingAgent):
         for symbol, data in context.symbols.items():
             symbols_str += f"""
 {symbol}:
-  Current Price: ${data.get('price', 0):.2f}
-  Daily Change: {data.get('daily_change_percent', 0):+.2f}%
-  RSI: {data.get('rsi', 50):.1f}
-  MACD Histogram: {data.get('macd_histogram', 0):.4f}
-  Above VWAP: {data.get('above_vwap', False)}
-  Short-term Trend: {data.get('trend', 'unknown')}
+  Current Price: ${data.get("price", 0):.2f}
+  Daily Change: {data.get("daily_change_percent", 0):+.2f}%
+  RSI: {data.get("rsi", 50):.1f}
+  MACD Histogram: {data.get("macd_histogram", 0):.4f}
+  Above VWAP: {data.get("above_vwap", False)}
+  Short-term Trend: {data.get("trend", "unknown")}
 """
 
-        return f"""
+        return (
+            f"""
 === HOURLY TRADING DECISION ===
-Timestamp: {context.timestamp.strftime('%Y-%m-%d %H:%M ET')}
+Timestamp: {context.timestamp.strftime("%Y-%m-%d %H:%M ET")}
 
 ACCOUNT STATUS:
-  Equity: ${context.account.get('equity', 100000):.2f}
-  Cash: ${context.account.get('cash', 100000):.2f}
-  Buying Power: ${context.account.get('buying_power', 100000):.2f}
-  Daily P&L: ${context.account.get('daily_pnl', 0):.2f} ({context.account.get('daily_pnl_percent', 0):+.2f}%)
+  Equity: ${context.account.get("equity", 100000):.2f}
+  Cash: ${context.account.get("cash", 100000):.2f}
+  Buying Power: ${context.account.get("buying_power", 100000):.2f}
+  Daily P&L: ${context.account.get("daily_pnl", 0):.2f} """
+            f"""({context.account.get("daily_pnl_percent", 0):+.2f}%)
 
 CURRENT POSITIONS:
 {positions_str}
@@ -309,6 +341,7 @@ nothing trades (treated as HOLD).
 
 Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
 """
+        )
 
     def _format_news(self, context: MarketContext) -> str:
         """Format news sentiment data for the context."""
@@ -316,7 +349,7 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
             return "No news data available"
 
         lines = []
-        for symbol in context.symbols.keys():
+        for symbol in context.symbols:
             sentiment = context.news_sentiment.get(symbol, {})
             if not sentiment:
                 lines.append(f"  {symbol}: No recent news")
@@ -333,12 +366,12 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
             # Add latest headline if available
             if latest and latest != "No recent news":
                 headline_short = latest[:60] + "..." if len(latest) > 60 else latest
-                lines.append(f"    Latest: \"{headline_short}\"")
+                lines.append(f'    Latest: "{headline_short}"')
 
         return "\n".join(lines) if lines else "No news data available"
 
     def _parse_decision(
-        self, response: Any, timestamp: datetime, tool_calls: list
+        self, response: Any, timestamp: datetime, tool_calls: list[Any]
     ) -> TradingDecision:
         """Parse Claude's response into a TradingDecision."""
         # Extract text content from response
@@ -378,7 +411,7 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
         # "ACTION: BUY", "ACTION:BUY", "**ACTION: BUY**", "**ACTION:** BUY".
         # re.search returns the leftmost match, so the first stated action wins.
         action_match = re.search(
-            r'\bACTION\b[\s:*\-]*\b(BUY|SELL|HOLD|CLOSE)\b',
+            r"\bACTION\b[\s:*\-]*\b(BUY|SELL|HOLD|CLOSE)\b",
             text_content,
             re.IGNORECASE,
         )
@@ -402,7 +435,7 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
                 decision.symbol = "TSLA"
 
             qty_match = re.search(
-                r'(?:QUANTITY|SHARES)[:\s]+(\d+)', text_content, re.IGNORECASE
+                r"(?:QUANTITY|SHARES)[:\s]+(\d+)", text_content, re.IGNORECASE
             )
             if qty_match:
                 decision.quantity = int(qty_match.group(1))
@@ -417,7 +450,7 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
                 stray fragment as a price.
                 """
                 match = re.search(
-                    label_regex + r'[:\s]*(?:at\s+)?\$?\s*([\d,]+(?:\.\d+)?)',
+                    label_regex + r"[:\s]*(?:at\s+)?\$?\s*([\d,]+(?:\.\d+)?)",
                     text_content,
                     re.IGNORECASE,
                 )
@@ -426,11 +459,11 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
                 value = float(match.group(1).replace(",", ""))
                 return value if value >= 10 else None
 
-            stop_loss = _extract_price(r'STOP[\s_-]*LOSS')
+            stop_loss = _extract_price(r"STOP[\s_-]*LOSS")
             if stop_loss is not None:
                 decision.stop_loss = stop_loss
 
-            take_profit = _extract_price(r'TAKE[\s_-]*PROFIT')
+            take_profit = _extract_price(r"TAKE[\s_-]*PROFIT")
             if take_profit is not None:
                 decision.take_profit = take_profit
 
@@ -443,26 +476,29 @@ Remember: You're competing against Grok. Make smart, risk-adjusted decisions.
     async def generate_reflection(
         self,
         episode_id: int,
-        decision_made: dict,
-        market_context: dict,
+        decision_made: dict[str, Any],
+        market_context: dict[str, Any],
         outcome_pnl: float,
-        outcome_status: str
-    ) -> dict:
+        outcome_status: str,
+    ) -> dict[str, Any]:
         """
         Use Claude to reflect on a trade outcome and extract lessons.
 
-        Returns dict with: what_worked, what_failed, lesson_learned, next_time_will, tags
+        Returns dict with: what_worked, what_failed, lesson_learned,
+        next_time_will, tags
         """
         if not LEARNING_ENABLED:
             return {}
 
-        reflection_prompt = f"""You made a trading decision that has now completed. Analyze what happened and learn from it.
+        reflection_prompt = (
+            f"""You made a trading decision that has now completed. """
+            f"""Analyze what happened and learn from it.
 
 DECISION MADE:
-- Action: {decision_made.get('action', 'HOLD')}
-- Symbol: {decision_made.get('symbol', 'N/A')}
-- Strategy: {decision_made.get('strategy', 'unknown')}
-- Your reasoning at the time: {decision_made.get('reasoning', 'N/A')[:500]}
+- Action: {decision_made.get("action", "HOLD")}
+- Symbol: {decision_made.get("symbol", "N/A")}
+- Strategy: {decision_made.get("strategy", "unknown")}
+- Your reasoning at the time: {decision_made.get("reasoning", "N/A")[:500]}
 
 MARKET CONTEXT AT DECISION TIME:
 {json.dumps(market_context, indent=2, default=str)[:1000]}
@@ -480,15 +516,21 @@ Reflect honestly on this trade. Respond in JSON format:
     "tags": ["RELEVANT", "TAGS", "FOR", "SEARCH"]
 }}
 
-Tags should include: the symbol, strategy used, market condition, and any relevant indicators.
+Tags should include: the symbol, strategy used, market condition, """
+            f"""and any relevant indicators.
 Be specific and actionable in your reflections."""
+        )
 
         try:
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
-                system="You are analyzing your own trading decisions to learn and improve. Be honest and specific in your reflections. Respond only with valid JSON.",
-                messages=[{"role": "user", "content": reflection_prompt}]
+                system=(
+                    "You are analyzing your own trading decisions to learn "
+                    "and improve. Be honest and specific in your reflections. "
+                    "Respond only with valid JSON."
+                ),
+                messages=[{"role": "user", "content": reflection_prompt}],
             )
 
             # Parse JSON from response
@@ -511,7 +553,7 @@ Be specific and actionable in your reflections."""
                     "what_failed": reflection.get("what_failed", ""),
                     "lesson_learned": reflection.get("lesson_learned", ""),
                     "next_time_will": reflection.get("next_time_will", ""),
-                    "tags": reflection.get("tags", [])
+                    "tags": reflection.get("tags", []),
                 }
             except json.JSONDecodeError:
                 # Fallback: extract what we can
@@ -520,7 +562,10 @@ Be specific and actionable in your reflections."""
                     "what_failed": "",
                     "lesson_learned": text_content[:500] if text_content else "",
                     "next_time_will": "",
-                    "tags": [decision_made.get("symbol", ""), decision_made.get("strategy", "")]
+                    "tags": [
+                        decision_made.get("symbol", ""),
+                        decision_made.get("strategy", ""),
+                    ],
                 }
 
         except Exception as e:
@@ -530,5 +575,5 @@ Be specific and actionable in your reflections."""
                 "what_failed": "",
                 "lesson_learned": f"Reflection failed: {str(e)}",
                 "next_time_will": "",
-                "tags": []
+                "tags": [],
             }

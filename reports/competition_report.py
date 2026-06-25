@@ -1,11 +1,10 @@
 """Generate competition reports from the learning system data."""
+
 import asyncio
-from datetime import datetime, date, timedelta
-from decimal import Decimal
-from typing import Optional
+from datetime import datetime
 from pathlib import Path
 
-from config.settings import STARTING_CAPITAL, POSTGRES_URL
+from config.settings import POSTGRES_URL, STARTING_CAPITAL
 
 
 class CompetitionReporter:
@@ -19,11 +18,11 @@ class CompetitionReporter:
     - Key learnings compilation
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.output_dir = Path("reports/output")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    async def generate_full_report(self, output_file: Optional[str] = None) -> str:
+    async def generate_full_report(self, output_file: str | None = None) -> str:
         """
         Generate a complete competition report.
 
@@ -33,7 +32,6 @@ class CompetitionReporter:
             return "Error: PostgreSQL not configured. Cannot generate report."
 
         try:
-            from database.learning_store import LearningStore
             from database.postgres_client import PostgresClient
 
             # Ensure connection is available
@@ -88,7 +86,7 @@ class CompetitionReporter:
                     Generated: {now.strftime("%Y-%m-%d %H:%M")}
 ================================================================================
 
-Competition: Claude (claude-opus-4-5-20250514) vs Grok (grok-4)
+Competition: Claude (claude-sonnet-4-6) vs Grok (grok-4.3)
 Starting Capital: ${STARTING_CAPITAL:,.2f} per account
 Symbols: GOOGL, TSLA
 """
@@ -118,7 +116,7 @@ No competition data available yet.
             f"\nWINNER: {winner}",
             "",
             f"{'Agent':<12} {'Final Equity':<15} {'Total P&L':<12} {'Win Rate':<10}",
-            "-" * 60
+            "-" * 60,
         ]
 
         for score in scores:
@@ -145,7 +143,7 @@ No competition data available yet.
         lines = [
             "\n" + "=" * 60,
             f"                {agent_name.upper()}'S JOURNEY",
-            "=" * 60
+            "=" * 60,
         ]
 
         # Get top learnings
@@ -172,21 +170,22 @@ No competition data available yet.
 
         lines.append("\n\nDECISIONS THAT MADE THE DIFFERENCE:")
         significant = [
-            e for e in completed
-            if e.outcome_pnl and abs(float(e.outcome_pnl)) >= 100
+            e for e in completed if e.outcome_pnl and abs(float(e.outcome_pnl)) >= 100
         ]
         if significant:
             for ep in significant[:5]:
                 decision = ep.decision_made
                 pnl = float(ep.outcome_pnl or 0)
-                timestamp = ep.timestamp.strftime("%Y-%m-%d %H:%M") if ep.timestamp else "N/A"
+                timestamp = (
+                    ep.timestamp.strftime("%Y-%m-%d %H:%M") if ep.timestamp else "N/A"
+                )
                 lines.append(
                     f"\n- [{timestamp}] {decision.get('action', 'N/A').upper()} "
                     f"{decision.get('symbol', 'N/A')}"
                 )
                 lines.append(f"  Strategy: {decision.get('strategy', 'unknown')}")
                 lines.append(f"  Outcome: {ep.outcome_status} (${pnl:+.2f})")
-                reasoning = decision.get('reasoning', '')[:100]
+                reasoning = decision.get("reasoning", "")[:100]
                 if reasoning:
                     lines.append(f"  Reasoning: {reasoning}...")
         else:
@@ -196,9 +195,9 @@ No competition data available yet.
         strategy_counts: dict[str, int] = {}
         strategy_wins: dict[str, int] = {}
         for ep in completed:
-            strategy = ep.decision_made.get('strategy', 'unknown')
+            strategy = ep.decision_made.get("strategy", "unknown")
             strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
-            if ep.outcome_status == 'win':
+            if ep.outcome_status == "win":
                 strategy_wins[strategy] = strategy_wins.get(strategy, 0) + 1
 
         lines.append("\n\nSTRATEGY BREAKDOWN:")
@@ -206,7 +205,9 @@ No competition data available yet.
             for strategy, count in sorted(strategy_counts.items(), key=lambda x: -x[1]):
                 wins = strategy_wins.get(strategy, 0)
                 win_rate = (wins / count * 100) if count > 0 else 0
-                lines.append(f"  - {strategy.upper()}: {count} trades, {win_rate:.0f}% win rate")
+                lines.append(
+                    f"  - {strategy.upper()}: {count} trades, {win_rate:.0f}% win rate"
+                )
         else:
             lines.append("   No strategy data available.")
 
@@ -216,11 +217,7 @@ No competition data available yet.
         """Generate key insights section."""
         from database.learning_store import LearningStore
 
-        lines = [
-            "\n" + "=" * 60,
-            "                    KEY INSIGHTS",
-            "=" * 60
-        ]
+        lines = ["\n" + "=" * 60, "                    KEY INSIGHTS", "=" * 60]
 
         # Aggregate data across both agents
         all_learnings = []
@@ -233,7 +230,7 @@ No competition data available yet.
             successful = sorted(
                 all_learnings,
                 key=lambda x: x.success_count - x.failure_count,
-                reverse=True
+                reverse=True,
             )[:3]
 
             lines.append("\nMOST RELIABLE PATTERNS:")
@@ -242,13 +239,16 @@ No competition data available yet.
                     f"  - [{learning.agent_name.upper()}] {learning.pattern[:60]}"
                 )
                 lines.append(
-                    f"    ({learning.success_count} wins, {learning.failure_count} losses)"
+                    f"    ({learning.success_count} wins, "
+                    f"{learning.failure_count} losses)"
                 )
 
             # Count categories
             category_counts: dict[str, int] = {}
-            for l in all_learnings:
-                category_counts[l.category] = category_counts.get(l.category, 0) + 1
+            for learning in all_learnings:
+                category_counts[learning.category] = (
+                    category_counts.get(learning.category, 0) + 1
+                )
 
             lines.append("\n\nLEARNING CATEGORIES:")
             for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
@@ -256,8 +256,8 @@ No competition data available yet.
 
             # Tag frequency
             tag_counts: dict[str, int] = {}
-            for l in all_learnings:
-                for tag in l.tags:
+            for learning in all_learnings:
+                for tag in learning.tags:
                     tag_counts[tag.upper()] = tag_counts.get(tag.upper(), 0) + 1
 
             lines.append("\n\nMOST COMMON TAGS:")
@@ -266,13 +266,15 @@ No competition data available yet.
                 lines.append(f"  - {tag}: {count}")
 
         else:
-            lines.append("\nNo insights available yet. Run more trading cycles to generate data.")
+            lines.append(
+                "\nNo insights available yet. Run more trading cycles to generate data."
+            )
 
         return "\n".join(lines)
 
     def _generate_footer(self) -> str:
         """Generate report footer."""
-        return f"""
+        return """
 
 ================================================================================
                            END OF REPORT
@@ -287,15 +289,16 @@ or query the PostgreSQL database directly for detailed learning data.
 """
 
 
-async def generate_report_cli():
+async def generate_report_cli() -> None:
     """CLI entry point for report generation."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate trading competition report")
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output filename (default: auto-generated timestamp)",
-        default=None
+        default=None,
     )
     args = parser.parse_args()
 

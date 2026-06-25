@@ -4,6 +4,7 @@ PostgreSQL JSONB rejects NaN and Inf tokens (not valid per JSON spec).
 This module provides a drop-in replacement for json.dumps() that converts
 these values to null for safe database storage.
 """
+
 import json
 import math
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 # Try importing numpy for handling numpy types
 try:
     import numpy as np
+
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
@@ -96,7 +98,7 @@ class SafeJSONEncoder(json.JSONEncoder):
         return obj
 
 
-def safe_json_dumps(obj: Any, **kwargs) -> str:
+def safe_json_dumps(obj: Any, **kwargs: Any) -> str:
     """Drop-in replacement for json.dumps() that handles NaN/Inf values.
 
     Converts NaN and Inf values to null (JSON-valid) before serialization.
@@ -115,5 +117,5 @@ def safe_json_dumps(obj: Any, **kwargs) -> str:
         '{"value": null, "normal": 42}'
     """
     # Remove 'cls' if provided to avoid conflict
-    kwargs.pop('cls', None)
+    kwargs.pop("cls", None)
     return json.dumps(obj, cls=SafeJSONEncoder, **kwargs)

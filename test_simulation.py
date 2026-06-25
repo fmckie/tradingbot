@@ -10,16 +10,16 @@ Tests the full flow:
 5. Reflection is generated
 6. Learning is distilled
 """
+
 import asyncio
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from config.settings import POSTGRES_URL, LEARNING_ENABLED
-
+from config.settings import POSTGRES_URL
 
 # Mock market data
 MOCK_MARKET_DATA = {
@@ -42,7 +42,7 @@ MOCK_MARKET_DATA = {
         "above_vwap": True,
         "ema_9": 177.20,
         "ema_21": 175.50,
-        "trend": "bullish"
+        "trend": "bullish",
     },
     "TSLA": {
         "price": 248.30,
@@ -63,8 +63,8 @@ MOCK_MARKET_DATA = {
         "above_vwap": True,
         "ema_9": 246.80,
         "ema_21": 243.20,
-        "trend": "bullish"
-    }
+        "trend": "bullish",
+    },
 }
 
 MOCK_ACCOUNT = {
@@ -73,7 +73,7 @@ MOCK_ACCOUNT = {
     "buying_power": 150000.00,
     "portfolio_value": 100000.00,
     "daily_pnl": 250.00,
-    "daily_pnl_percent": 0.25
+    "daily_pnl_percent": 0.25,
 }
 
 MOCK_POSITIONS = [
@@ -84,7 +84,7 @@ MOCK_POSITIONS = [
         "current_price": 178.50,
         "market_value": 8925.00,
         "unrealized_pnl": 175.00,
-        "unrealized_pnl_percent": 2.0
+        "unrealized_pnl_percent": 2.0,
     }
 ]
 
@@ -101,12 +101,15 @@ async def run_simulation():
         return False
 
     # Import after env loaded
-    from database.postgres_client import PostgresClient, init_database
-    from database.learning_store import (
-        LearningStore, Episode, Reflection, Learning,
-        CompetitionScore, OutcomeStatus
-    )
     from agents.base_agent import MarketContext
+    from database.learning_store import (
+        Episode,
+        Learning,
+        LearningStore,
+        OutcomeStatus,
+        Reflection,
+    )
+    from database.postgres_client import PostgresClient, init_database
 
     # Initialize database
     print("\n1. INITIALIZING DATABASE")
@@ -127,7 +130,7 @@ async def run_simulation():
             success_count=8,
             failure_count=2,
             is_active=True,
-            tags=["RSI", "VWAP", "MOMENTUM", "BULLISH", "GOOGL", "TSLA"]
+            tags=["RSI", "VWAP", "MOMENTUM", "BULLISH", "GOOGL", "TSLA"],
         ),
         Learning(
             agent_name="claude",
@@ -137,7 +140,7 @@ async def run_simulation():
             success_count=12,
             failure_count=4,
             is_active=True,
-            tags=["TREND", "EMA", "STRATEGY"]
+            tags=["TREND", "EMA", "STRATEGY"],
         ),
         Learning(
             agent_name="grok",
@@ -147,7 +150,7 @@ async def run_simulation():
             success_count=6,
             failure_count=3,
             is_active=True,
-            tags=["MACD", "RSI", "MOMENTUM", "GOOGL", "TSLA"]
+            tags=["MACD", "RSI", "MOMENTUM", "GOOGL", "TSLA"],
         ),
         Learning(
             agent_name="grok",
@@ -157,7 +160,7 @@ async def run_simulation():
             success_count=10,
             failure_count=1,
             is_active=True,
-            tags=["ATR", "RISK", "STOP_LOSS"]
+            tags=["ATR", "RISK", "STOP_LOSS"],
         ),
     ]
 
@@ -165,7 +168,7 @@ async def run_simulation():
         try:
             await LearningStore.create_learning(learning)
             print(f"   [OK] Seeded: {learning.pattern[:50]}...")
-        except Exception as e:
+        except Exception:
             # Might already exist from previous run
             print(f"   [SKIP] {learning.pattern[:30]}... (may exist)")
 
@@ -179,11 +182,17 @@ async def run_simulation():
         account=MOCK_ACCOUNT,
         positions=MOCK_POSITIONS,
         recent_trades=[],
-        market_condition="bullish - both stocks trending up"
+        market_condition="bullish - both stocks trending up",
     )
     print(f"   Market: {context.market_condition}")
-    print(f"   GOOGL: ${MOCK_MARKET_DATA['GOOGL']['price']} (RSI: {MOCK_MARKET_DATA['GOOGL']['rsi']})")
-    print(f"   TSLA: ${MOCK_MARKET_DATA['TSLA']['price']} (RSI: {MOCK_MARKET_DATA['TSLA']['rsi']})")
+    print(
+        f"   GOOGL: ${MOCK_MARKET_DATA['GOOGL']['price']} "
+        f"(RSI: {MOCK_MARKET_DATA['GOOGL']['rsi']})"
+    )
+    print(
+        f"   TSLA: ${MOCK_MARKET_DATA['TSLA']['price']} "
+        f"(RSI: {MOCK_MARKET_DATA['TSLA']['rsi']})"
+    )
 
     # Test recall for both agents
     print("\n4. TESTING LEARNING RECALL")
@@ -202,7 +211,7 @@ async def run_simulation():
         # Test recall
         claude_learnings = await claude.recall_learnings(context)
         if claude_learnings:
-            print(f"   [OK] Claude recalled learnings:")
+            print("   [OK] Claude recalled learnings:")
             # Print first few lines
             for line in claude_learnings.split("\n")[2:6]:
                 if line.strip():
@@ -212,7 +221,7 @@ async def run_simulation():
 
         grok_learnings = await grok.recall_learnings(context)
         if grok_learnings:
-            print(f"   [OK] Grok recalled learnings:")
+            print("   [OK] Grok recalled learnings:")
             for line in grok_learnings.split("\n")[2:6]:
                 if line.strip():
                     print(f"       {line.strip()[:70]}")
@@ -238,14 +247,17 @@ async def run_simulation():
             "symbol": "TSLA",
             "quantity": 20,
             "strategy": "momentum",
-            "reasoning": "RSI at 58 with positive MACD and price above VWAP suggests continued momentum. EMA9 > EMA21 confirms bullish trend.",
-            "confidence": 0.75
+            "reasoning": (
+                "RSI at 58 with positive MACD and price above VWAP suggests "
+                "continued momentum. EMA9 > EMA21 confirms bullish trend."
+            ),
+            "confidence": 0.75,
         },
-        outcome_status=OutcomeStatus.PENDING.value
+        outcome_status=OutcomeStatus.PENDING.value,
     )
     episode_id = await LearningStore.create_episode(episode)
     print(f"   [OK] Created episode: id={episode_id}")
-    print(f"       Decision: BUY 20 TSLA @ $248.30 (momentum)")
+    print("       Decision: BUY 20 TSLA @ $248.30 (momentum)")
 
     # Simulate trade outcome (profit)
     await asyncio.sleep(0.5)  # Small delay to simulate time passing
@@ -266,7 +278,7 @@ async def run_simulation():
             decision_made=episode.decision_made,
             market_context=MOCK_MARKET_DATA,
             outcome_pnl=float(outcome_pnl),
-            outcome_status=outcome_status
+            outcome_status=outcome_status,
         )
 
         if reflection_data:
@@ -287,7 +299,7 @@ async def run_simulation():
                 lesson_learned=reflection_data.get("lesson_learned", ""),
                 next_time_will=reflection_data.get("next_time_will", ""),
                 confidence_adjustment=Decimal("0.05"),
-                tags=reflection_data.get("tags", [])
+                tags=reflection_data.get("tags", []),
             )
             reflection_id = await LearningStore.create_reflection(reflection)
             print(f"   [OK] Stored reflection: id={reflection_id}")
@@ -308,8 +320,8 @@ async def run_simulation():
     learnings = await LearningStore.get_top_learnings("claude", limit=5)
     print(f"   Claude learnings: {len(learnings)}")
 
-    grok_learnings = await LearningStore.get_top_learnings("grok", limit=5)
-    print(f"   Grok learnings: {len(grok_learnings)}")
+    grok_top_learnings = await LearningStore.get_top_learnings("grok", limit=5)
+    print(f"   Grok learnings: {len(grok_top_learnings)}")
 
     # Generate a mini report
     print("\n8. MINI COMPETITION REPORT")
@@ -318,9 +330,12 @@ async def run_simulation():
     for agent in ["claude", "grok"]:
         agent_learnings = await LearningStore.get_top_learnings(agent, limit=3)
         print(f"\n   {agent.upper()}'s Top Learnings:")
-        for i, l in enumerate(agent_learnings, 1):
-            print(f"   {i}. [{l.category}] {l.pattern[:50]}...")
-            print(f"      Success rate: {l.success_rate:.0f}% ({l.success_count}W/{l.failure_count}L)")
+        for i, learning in enumerate(agent_learnings, 1):
+            print(f"   {i}. [{learning.category}] {learning.pattern[:50]}...")
+            print(
+                f"      Success rate: {learning.success_rate:.0f}% "
+                f"({learning.success_count}W/{learning.failure_count}L)"
+            )
 
     # Cleanup option
     print("\n" + "=" * 60)

@@ -1,15 +1,19 @@
 """News analysis tools that AI agents can call."""
-from typing import Any, Optional
 
-from data.news import NewsProvider, NewsArticle, NewsSentiment
+from typing import Any
+
 from config.settings import SYMBOLS
-
+from data.news import NewsProvider, NewsSentiment
 
 # Tool schemas for Claude/Grok function calling
 NEWS_TOOLS_SCHEMA = [
     {
         "name": "get_recent_news",
-        "description": "Get recent news headlines for GOOGL or TSLA with sentiment analysis. Use this to understand market sentiment and recent events that may impact price.",
+        "description": (
+            "Get recent news headlines for GOOGL or TSLA with sentiment "
+            "analysis. Use this to understand market sentiment and recent "
+            "events that may impact price."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -31,7 +35,11 @@ NEWS_TOOLS_SCHEMA = [
     },
     {
         "name": "get_news_sentiment",
-        "description": "Get aggregated news sentiment summary for GOOGL or TSLA. Returns overall sentiment (bullish/bearish/neutral) based on recent news analysis.",
+        "description": (
+            "Get aggregated news sentiment summary for GOOGL or TSLA. "
+            "Returns overall sentiment (bullish/bearish/neutral) based on "
+            "recent news analysis."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -53,7 +61,10 @@ NEWS_TOOLS_SCHEMA = [
     },
     {
         "name": "search_news",
-        "description": "Search recent news for a keyword across both GOOGL and TSLA. Useful for finding specific events or topics.",
+        "description": (
+            "Search recent news for a keyword across both GOOGL and TSLA. "
+            "Useful for finding specific events or topics."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -87,7 +98,7 @@ class NewsTools:
         """
         self.news_provider = news_provider
 
-    def execute(self, tool_name: str, parameters: dict) -> dict[str, Any]:
+    def execute(self, tool_name: str, parameters: dict[str, Any]) -> dict[str, Any]:
         """Execute a news tool and return the result."""
         handlers = {
             "get_recent_news": self._get_recent_news,
@@ -104,7 +115,7 @@ class NewsTools:
         except Exception as e:
             return {"error": str(e)}
 
-    def _get_recent_news(self, params: dict) -> dict[str, Any]:
+    def _get_recent_news(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get recent news headlines for a symbol."""
         symbol = params.get("symbol")
         limit = min(params.get("limit", 5), 10)
@@ -112,7 +123,9 @@ class NewsTools:
         if symbol not in SYMBOLS:
             return {"error": f"Invalid symbol. Must be one of {list(SYMBOLS)}"}
 
-        articles = self.news_provider.get_news_for_symbol(symbol, hours_back=24, limit=limit)
+        articles = self.news_provider.get_news_for_symbol(
+            symbol, hours_back=24, limit=limit
+        )
 
         return {
             "symbol": symbol,
@@ -129,7 +142,7 @@ class NewsTools:
             ],
         }
 
-    def _get_news_sentiment(self, params: dict) -> dict[str, Any]:
+    def _get_news_sentiment(self, params: dict[str, Any]) -> dict[str, Any]:
         """Get aggregated news sentiment for a symbol."""
         symbol = params.get("symbol")
         hours_back = min(params.get("hours_back", 24), 72)
@@ -154,7 +167,7 @@ class NewsTools:
             "interpretation": self._interpret_sentiment(sentiment),
         }
 
-    def _search_news(self, params: dict) -> dict[str, Any]:
+    def _search_news(self, params: dict[str, Any]) -> dict[str, Any]:
         """Search news for a keyword."""
         keyword = params.get("keyword", "").lower().strip()
         limit = min(params.get("limit", 5), 10)
@@ -166,7 +179,9 @@ class NewsTools:
             return {"error": "Keyword must be at least 2 characters"}
 
         # Get all recent news
-        all_articles = self.news_provider.get_news(list(SYMBOLS), hours_back=48, limit=30)
+        all_articles = self.news_provider.get_news(
+            list(SYMBOLS), hours_back=48, limit=30
+        )
 
         # Filter by keyword
         matching = []
@@ -201,11 +216,17 @@ class NewsTools:
         count = sentiment.article_count
 
         if score > 0.3:
-            return f"Strongly bullish news flow ({count} articles) - positive market sentiment"
+            return (
+                f"Strongly bullish news flow ({count} articles) - "
+                f"positive market sentiment"
+            )
         elif score > 0.1:
             return f"Moderately bullish news ({count} articles) - slight positive bias"
         elif score < -0.3:
-            return f"Strongly bearish news flow ({count} articles) - negative market sentiment"
+            return (
+                f"Strongly bearish news flow ({count} articles) - "
+                f"negative market sentiment"
+            )
         elif score < -0.1:
             return f"Moderately bearish news ({count} articles) - slight negative bias"
         else:

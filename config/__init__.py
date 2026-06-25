@@ -1,6 +1,7 @@
 """Configuration module for AI Trading Competition."""
+
 from .alpaca_config import get_claude_client, get_grok_client
-from .settings import RISK_LIMITS, TRADING_HOURS, SYMBOLS
+from .settings import RISK_LIMITS, SYMBOLS, TRADING_HOURS
 
 __all__ = [
     "get_claude_client",
